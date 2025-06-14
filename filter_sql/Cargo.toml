@@ -1,0 +1,11 @@
+[package]
+name = "filter_sql"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+filter_macros = { workspace = true }
+filter_traits = { workspace = true }
+sqlx = { workspace = true }
+anyhow = { workspace = true }
