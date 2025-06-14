@@ -15,6 +15,7 @@ infer-defaults   = []
 
 [dependencies]
 filter_traits = { workspace = true }
+validator = { workspace = true }
 
 proc-macro2  = "1.0"
 quote        = "1.0"

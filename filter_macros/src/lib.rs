@@ -287,6 +287,105 @@ pub fn derive_filter(input: TokenStream) -> TokenStream {
     TokenStream::from(out)
 }
 
+#[proc_macro_derive(IntoFilters, attributes(filter, filter_query))]
+pub fn derive_into_filters(input: TokenStream) -> TokenStream {
+    use heck::ToUpperCamelCase;
+    use quote::quote;
+    use syn::{parse_macro_input, Data, DeriveInput, Lit, Meta, NestedMeta};
+
+    let input = parse_macro_input!(input as DeriveInput);
+    let struct_id = &input.ident;
+
+    let mut enum_ident = None::<syn::Ident>;
+    for attr in &input.attrs {
+        if let Ok(Meta::List(list)) = attr.parse_meta() {
+            if list.path.is_ident("filter_query") {
+                for nm in list.nested {
+                    if let NestedMeta::Meta(Meta::NameValue(nv)) = nm {
+                        if nv.path.is_ident("target") {
+                            if let Lit::Str(s) = &nv.lit {
+                                enum_ident = Some(syn::Ident::new(&s.value(), s.span()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let enum_ident =
+        enum_ident.expect("missing #[filter_query(target = \"...\")] on filter-query struct");
+
+    let Data::Struct(ds) = &input.data else {
+        panic!("IntoFilters can only be derived for structs")
+    };
+
+    let mut push_arms = Vec::new();
+
+    for f in ds.fields.iter() {
+        let ident = f
+            .ident
+            .as_ref()
+            .expect("IntoFilters only works with named fields");
+
+        let ty_path = match &f.ty {
+            syn::Type::Path(p) => p,
+            _ => panic!("field {} is not of type Option<…>", ident),
+        };
+        let segment = &ty_path.path.segments;
+        if segment.last().unwrap().ident != "Option" {
+            panic!("field {} must be Option<…>", ident);
+        }
+
+        let mut variant = None::<String>;
+        for attr in &f.attrs {
+            if let Ok(Meta::List(list)) = attr.parse_meta() {
+                if list.path.is_ident("filter") {
+                    for nm in list.nested {
+                        if let NestedMeta::Meta(Meta::NameValue(nv)) = nm {
+                            if nv.path.is_ident("name") {
+                                if let Lit::Str(s) = &nv.lit {
+                                    variant = Some(s.value());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let variant_name = variant.unwrap_or_else(|| ident.to_string().to_upper_camel_case());
+        let variant_ident = syn::Ident::new(&variant_name, ident.span());
+
+        push_arms.push(quote! {
+            if let Some(v) = s.#ident {
+                filters.push(#enum_ident::#variant_ident(v));
+            }
+        });
+    }
+
+    let out = quote! {
+    impl ::std::convert::TryFrom<#struct_id> for Vec<#enum_ident> {
+        type Error = anyhow::Error;
+
+        fn try_from(s: #struct_id) -> Result<Self, Self::Error> {
+            use ::validator::Validate as _;
+            s.validate()?;
+
+            let mut filters = Vec::new();
+            #(#push_arms)*
+            Ok(filters)
+        }
+    }
+
+            impl ::filter_traits::IntoFilters<#enum_ident> for #struct_id {
+                fn into_filters(self) -> Result<Vec<#enum_ident>, anyhow::Error> {
+                    <Vec<#enum_ident>>::try_from(self)
+                }
+            }
+        };
+    TokenStream::from(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{infer_column, Operator, SUFFIXES};

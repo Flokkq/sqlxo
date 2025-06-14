@@ -9,3 +9,6 @@ filter_macros = { workspace = true }
 filter_traits = { workspace = true }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
+validator = { workspace = true }
+
+serde = { version = "1.0", features = ["derive"] }

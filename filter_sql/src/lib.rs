@@ -1,8 +1,11 @@
 #[cfg(test)]
 mod tests {
     use filter_macros::Filter;
+    use filter_macros::IntoFilters;
     use filter_traits::Filterable;
+    use serde::Deserialize;
     use sqlx::FromRow;
+    use validator::Validate;
 
     #[derive(Debug, FromRow)]
     struct Row {
@@ -84,5 +87,87 @@ mod tests {
     #[test]
     fn test_table_name_constant() {
         assert_eq!(Demo::table_name(), "demo");
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    enum ItemInputFilter {
+        PriceAbove(f64),
+        PriceBelow(f64),
+        AmountAbove(f64),
+        AmountBelow(f64),
+        SpecialNotEqual(i32),
+    }
+
+    /// API-Query-Struct mit automatischem Mapping
+    #[derive(Debug, Deserialize, Validate, IntoFilters)]
+    #[serde(rename_all = "camelCase")]
+    #[filter_query(target = "ItemInputFilter")]
+    struct ItemInputFilterQuery {
+        #[validate(range(min = 0.0))]
+        price_above: Option<f64>,
+        #[validate(range(min = 0.0))]
+        price_below: Option<f64>,
+        #[validate(range(min = 0.0))]
+        amount_above: Option<f64>,
+        #[validate(range(min = 0.0))]
+        amount_below: Option<f64>,
+
+        // explizites Variant-Override
+        #[filter(name = "SpecialNotEqual")]
+        #[validate(range(min = 0))]
+        special_not_equal: Option<i32>,
+    }
+
+    impl Default for ItemInputFilterQuery {
+        fn default() -> Self {
+            Self {
+                price_above: None,
+                price_below: None,
+                amount_above: None,
+                amount_below: None,
+                special_not_equal: None,
+            }
+        }
+    }
+
+    #[test]
+    fn into_filters_success() {
+        let q = ItemInputFilterQuery {
+            price_above: Some(10.0),
+            amount_above: Some(5.0),
+            ..Default::default()
+        };
+
+        let filters: Vec<ItemInputFilter> = q.try_into().unwrap();
+        let expected = vec![
+            ItemInputFilter::PriceAbove(10.0),
+            ItemInputFilter::AmountAbove(5.0),
+        ];
+        assert_eq!(filters, expected);
+    }
+
+    #[test]
+    fn into_filters_override_variant() {
+        let q = ItemInputFilterQuery {
+            special_not_equal: Some(42),
+            ..Default::default()
+        };
+
+        let filters: Vec<ItemInputFilter> = q.try_into().unwrap();
+        assert_eq!(filters, vec![ItemInputFilter::SpecialNotEqual(42)]);
+    }
+
+    #[test]
+    fn into_filters_validation_error() {
+        let q = ItemInputFilterQuery {
+            price_above: Some(-1.0), // verletzt Range-Validator
+            ..Default::default()
+        };
+
+        let res: anyhow::Result<Vec<ItemInputFilter>> = q.try_into();
+        assert!(
+            res.is_err(),
+            "negative Werte müssen eine Validation-Fehlermeldung liefern"
+        );
     }
 }

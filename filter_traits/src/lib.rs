@@ -13,3 +13,7 @@ pub trait Filterable {
         q: sqlx::query::QueryAs<'q, sqlx::Postgres, Self::Entity, sqlx::postgres::PgArguments>,
     ) -> sqlx::query::QueryAs<'q, sqlx::Postgres, Self::Entity, sqlx::postgres::PgArguments>;
 }
+
+pub trait IntoFilters<F> {
+    fn into_filters(self) -> Result<Vec<F>, anyhow::Error>;
+}
