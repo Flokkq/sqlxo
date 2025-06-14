@@ -1,0 +1,35 @@
+[workspace.package]
+name = "sql-filter"
+version = "0.1.0"
+edition = "2021"
+authors = ["Flokkq <webcla21@htl-kaindorf.at>"]
+
+[workspace]
+resolver = "2"
+members = [
+  "filter_traits",
+  "filter_macros",
+  "filter_sql"
+]
+
+[workspace.dependencies]
+filter_traits = { path = "filter_traits" }
+filter_macros = { path = "filter_macros" }
+
+anyhow = "1.0"
+
+[workspace.dependencies.sqlx]
+version = "0.8.5"
+default-features = true
+features = [
+  "runtime-tokio-rustls",
+  "macros",
+  "uuid",
+  "chrono",
+  "migrate",
+  "bigdecimal",
+  "any",
+  "mysql",
+  "postgres",
+  "sqlite",
+]
