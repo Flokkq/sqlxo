@@ -1,427 +1,302 @@
 #![feature(let_chains)]
 
-use heck::ToSnakeCase;
+use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase};
 use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::quote;
-use std::{fmt, str::FromStr};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Lit, LitStr, Meta, NestedMeta};
+use quote::{format_ident, quote};
+use syn::{parse_macro_input, Data, DeriveInput, Error, Fields, Lit, Meta, NestedMeta, Visibility};
 
-const SUFFIXES: [&str; 16] = [
-    "Neq",
-    "NotBetween",
-    "NotIn",
-    "NotLike",
-    "NotNull",
-    "Above",
-    "Below",
-    "Between",
-    "Eq",
-    "Gt",
-    "Gte",
-    "In",
-    "IsNull",
-    "Like",
-    "Lt",
-    "Lte",
-];
-
-fn infer_column(var: &str) -> String {
-    for suf in &SUFFIXES {
-        if let Some(base) = var.strip_suffix(suf) {
-            return base.to_snake_case();
-        }
-    }
-    var.to_snake_case()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Operator {
-    Eq,
-    Neq,
-    Gt,
-    Gte,
-    Lt,
-    Lte,
-    Like,
-    NotLike,
-    In,
-    NotIn,
-    Between,
-    NotBetween,
-    IsNull,
-    NotNull,
-}
-
-impl FromStr for Operator {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "eq" => Ok(Self::Eq),
-            "neq" => Ok(Self::Neq),
-            "gt" => Ok(Self::Gt),
-            "gte" => Ok(Self::Gte),
-            "lt" => Ok(Self::Lt),
-            "lte" => Ok(Self::Lte),
-            "like" => Ok(Self::Like),
-            "not_like" => Ok(Self::NotLike),
-            "in" => Ok(Self::In),
-            "not_in" => Ok(Self::NotIn),
-            "between" => Ok(Self::Between),
-            "not_between" => Ok(Self::NotBetween),
-            "is_null" => Ok(Self::IsNull),
-            "not_null" => Ok(Self::NotNull),
-            other => Err(format!(
-                "unknown operator `{}`; allowed = eq, neq, gt, gte, lt, lte, like, not_like, in, not_in, between, not_between, is_null, not_null",
-                other
-            )),
-        }
-    }
-}
-
-impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let sql = match self {
-            Self::Eq => "=",
-            Self::Neq => "<>",
-            Self::Gt => ">",
-            Self::Gte => ">=",
-            Self::Lt => "<",
-            Self::Lte => "<=",
-            Self::Like => "LIKE",
-            Self::NotLike => "NOT LIKE",
-            Self::In => "IN",
-            Self::NotIn => "NOT IN",
-            Self::Between => "BETWEEN",
-            Self::NotBetween => "NOT BETWEEN",
-            Self::IsNull => "IS NULL",
-            Self::NotNull => "IS NOT NULL",
-        };
-        write!(f, "{sql}")
-    }
-}
-
-const INFER_DEFAULTS: bool = cfg!(feature = "infer-defaults");
-
-#[proc_macro_derive(Filter, attributes(filter, filter_config))]
-pub fn derive_filter(input: TokenStream) -> TokenStream {
+/// #[derive(GenerateQuerySort)]
+/// optional: #[filter(table_name = "")]
+#[proc_macro_derive(Query, attributes(filter))]
+pub fn derive_queryt(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let enum_name = input.ident.clone();
 
-    let mut require_attrs = false;
-    for attr in &input.attrs {
-        if let Ok(Meta::List(meta)) = attr.parse_meta() {
-            if meta.path.is_ident("filter_config") {
-                for nm in meta.nested.iter() {
-                    if let NestedMeta::Meta(Meta::Path(p)) = nm {
-                        if p.is_ident("require_attrs") {
-                            require_attrs = true;
-                        }
-                    }
-                }
-            }
-        }
+    if !matches!(input.vis, Visibility::Public(_)) {
+        return Error::new_spanned(&input.vis, "Query derives requires a `pub` struct")
+            .to_compile_error()
+            .into();
     }
 
-    let mut table = None::<String>;
-    let mut entity = None::<syn::Ident>;
-    for attr in &input.attrs {
-        if let Ok(Meta::List(meta)) = attr.parse_meta() {
-            if meta.path.is_ident("filter") {
-                for nm in meta.nested.iter() {
-                    if let NestedMeta::Meta(Meta::NameValue(nv)) = nm {
-                        if nv.path.is_ident("table") {
-                            if let Lit::Str(s) = &nv.lit {
-                                table = Some(s.value());
-                            }
-                        } else if nv.path.is_ident("entity") {
-                            if let Lit::Str(s) = &nv.lit {
-                                entity = Some(syn::Ident::new(&s.value(), s.span()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let table = table.expect("missing #[filter(table=\"...\")] on enum");
-    let entity = entity.expect("missing #[filter(entity=\"...\")] on enum");
-
-    let Data::Enum(data_enum) = &input.data else {
-        panic!("`Filter` can only be derived on enums")
+    let table_name = match extract_table_name(&input) {
+        Ok(Some(v)) => v,
+        Ok(None) => input.ident.to_string().to_snake_case(),
+        Err(e) => return e.to_compile_error().into(),
     };
 
-    let mut clause_arms = Vec::new();
-    let mut bind_arms = Vec::new();
+    let query_ident = format_ident!("{}Query", input.ident);
+    let sort_ident = format_ident!("{}Sort", input.ident);
+    let table_const_ident =
+        format_ident!("{}_TABLE", input.ident.to_string().to_shouty_snake_case());
 
-    for var in &data_enum.variants {
-        let ident = &var.ident;
-        let ident_str = ident.to_string();
-        let fields = &var.fields;
+    let data = match &input.data {
+        Data::Struct(s) => s,
+        _not_supported => {
+            return Error::new_spanned(&input.ident, "Query derive only supports structs")
+                .to_compile_error()
+                .into();
+        }
+    };
 
-        let field_count = match fields {
-            Fields::Unit => 0,
-            Fields::Unnamed(u) if u.unnamed.len() == 1 => 1,
-            _ => panic!("variant {ident} must be unit or single-field tuple"),
+    let fields = match &data.fields {
+        Fields::Named(named) => &named.named,
+        not_supported => {
+            return Error::new_spanned(
+                not_supported,
+                "Query derive requires a struct with named fields",
+            )
+            .to_compile_error()
+            .into()
+        }
+    };
+
+    let mut query_variants: Vec<proc_macro2::TokenStream> = Vec::new();
+    let mut sort_variants: Vec<proc_macro2::TokenStream> = Vec::new();
+
+    for field in fields.iter() {
+        let field_name = field.ident.clone().unwrap();
+        let field_name_pascal = field_name.to_string().to_pascal_case();
+        let r#type = &field.ty;
+
+        let asc = format_ident!("By{}Asc", field_name_pascal);
+        let desc = format_ident!("By{}Desc", field_name_pascal);
+        sort_variants.push(quote! { #asc });
+        sort_variants.push(quote! { #desc });
+
+        match classify_type(r#type) {
+            Kind::String => query_variants.extend(parse_string_operators(&field_name_pascal)),
+            Kind::Bool => query_variants.extend(parse_boolean_operators(&field_name_pascal)),
+            Kind::Number => {
+                query_variants.extend(parse_numeric_operators(&field_name_pascal, r#type))
+            }
+            Kind::UuidOrScalarEq => {
+                query_variants.extend(parse_uuid_or_scalar_operators(&field_name_pascal, r#type))
+            }
+            Kind::DateTime => {
+                query_variants.extend(parse_datetime_operators(&field_name_pascal, r#type))
+            }
+        }
+    }
+
+    let expanded = quote! {
+        pub const #table_const_ident: &str = #table_name;
+
+        #[derive(Debug, Clone, PartialEq)]
+        pub enum #query_ident {
+            #(#query_variants),*
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum #sort_ident {
+            #(#sort_variants),*
+        }
+    };
+
+    expanded.into()
+}
+
+/// Extracts `table_name` from `#[filter(table_name = "...")]`.
+/// Returns:
+/// - Ok(Some(name)) if provided,
+/// - Ok(None) if the attribute is absent,
+/// - Err(...) with a span-accurate, message.
+fn extract_table_name(input: &DeriveInput) -> syn::Result<Option<String>> {
+    let mut value: Option<String> = None;
+    // let mut saw_filter_attr = false;
+
+    for attr in &input.attrs {
+        if !attr.path.is_ident("filter") {
+            continue;
+        }
+        // saw_filter_attr = true;
+
+        let meta = attr
+            .parse_meta()
+            .map_err(|_| syn::Error::new_spanned(attr, "invalid #[filter] attribute"))?;
+
+        let list = match meta {
+            Meta::List(list) => list,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "expected #[filter(table_name = \"...\")]", // wrong form
+                ));
+            }
         };
 
-        let mut col_override = None::<String>;
-        let mut op_override = None::<String>;
-
-        for attr in &var.attrs {
-            if let Ok(Meta::List(meta)) = attr.parse_meta() {
-                if meta.path.is_ident("filter") {
-                    for nm in meta.nested {
-                        if let NestedMeta::Meta(Meta::NameValue(nv)) = nm {
-                            if nv.path.is_ident("name") {
-                                if let Lit::Str(s) = &nv.lit {
-                                    col_override = Some(s.value());
-                                }
-                            } else if nv.path.is_ident("op") {
-                                if let Lit::Str(s) = &nv.lit {
-                                    op_override = Some(s.value());
-                                }
+        for nested in list.nested {
+            match nested {
+                NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("table_name") => {
+                    match nv.lit {
+                        Lit::Str(ref s) => {
+                            if value.is_some() {
+                                return Err(syn::Error::new_spanned(
+                                    nv,
+                                    "duplicate key `table_name` in #[filter]",
+                                ));
                             }
+                            value = Some(s.value());
+                        }
+                        other => {
+                            return Err(syn::Error::new_spanned(
+                                other,
+                                "expected string literal: #[filter(table_name = \"items\")]",
+                            ));
                         }
                     }
                 }
+                NestedMeta::Meta(Meta::NameValue(nv)) => {
+                    return Err(syn::Error::new_spanned(
+                        nv,
+                        "unknown key in #[filter]; only `table_name` is supported",
+                    ));
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        other,
+                        "expected name-value pair: table_name = \"...\"",
+                    ));
+                }
             }
         }
+    }
 
-        let col = col_override.unwrap_or_else(|| {
-            if require_attrs && !INFER_DEFAULTS {
-                panic!("variant `{ident}` missing #[filter(name=\"...\", op=\"...\")]");
-            }
-            infer_column(&ident_str)
-        });
+    // if saw_filter_attr && value.is_none() {
+    //     return Err(syn::Error::new_spanned(
+    //         &input.ident,
+    //         "missing `table_name` in #[filter]; expected #[filter(table_name = \"...\")]",
+    //     ));
+    // }
 
-        let op_enum: Operator = if let Some(key) = op_override {
-            key.parse()
-                .unwrap_or_else(|e| panic!("invalid op on {ident}: {e}"))
-        } else {
-            match SUFFIXES
-                .iter()
-                .find(|s| ident_str.ends_with(*s))
-                .map(|s| s.to_snake_case())
-                .as_deref()
+    Ok(value)
+}
+
+enum Kind {
+    String,
+    Bool,
+    Number,
+    UuidOrScalarEq,
+    DateTime,
+}
+
+fn classify_type(r#type: &syn::Type) -> Kind {
+    if let syn::Type::Path(type_path) = r#type {
+        // properly parse Option<T>
+        if type_path.path.segments.last().unwrap().ident == "Option" {
+            if let syn::PathArguments::AngleBracketed(args) =
+                &type_path.path.segments.last().unwrap().arguments
             {
-                Some("above") => Operator::Gt,
-                Some("below") => Operator::Lt,
-                Some(k) => k.parse().unwrap(),
-                None => Operator::Eq,
+                if let Some(syn::GenericArgument::Type(t)) = args.args.first() {
+                    return classify_type(t);
+                }
             }
+        }
+
+        let last = type_path.path.segments.last().unwrap().ident.to_string();
+
+        match last.as_str() {
+            "String" => return Kind::String,
+            "bool" => return Kind::Bool,
+            "Uuid" => return Kind::UuidOrScalarEq,
+            _ => {}
         };
 
-        let col_lit = LitStr::new(&col, Span::call_site());
-        let op_lit = LitStr::new(&op_enum.to_string(), Span::call_site());
+        // chrono::DateTime<Tz>
+        let seg_names: Vec<String> = type_path
+            .path
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect();
+        if seg_names.contains(&"DateTime".to_string()) && seg_names.iter().any(|s| s == "chrono") {
+            return Kind::DateTime;
+        }
 
-        if field_count == 0 {
-            clause_arms.push(quote! { Self::#ident => format!("{} {}", #col_lit, #op_lit) });
-            bind_arms.push(quote! { Self::#ident => q });
-        } else {
-            clause_arms
-                .push(quote! { Self::#ident(_) => format!("{} {} ${}", #col_lit, #op_lit, idx) });
-            bind_arms.push(quote! { Self::#ident(val) => q.bind(val) });
+        let ints = [
+            "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
+        ];
+        let floats = ["f32", "f64"];
+        if ints.contains(&last.as_str()) || floats.contains(&last.as_str()) {
+            return Kind::Number;
         }
     }
 
-    let out = quote! {
-            impl filter_traits::Filterable for #enum_name {
-                type Entity = #entity;
-
-                fn table_name() -> &'static str { #table }
-
-                fn filter_clause(&self, idx: usize) -> String {
-                    match self { #(#clause_arms),* }
-                }
-
-                fn bind<'q>(
-                    self,
-                    q: sqlx::query::QueryAs<
-                        'q,
-                        sqlx::Postgres,
-                        <Self as filter_traits::Filterable>::Entity,
-                        sqlx::postgres::PgArguments
-                    >
-                ) -> sqlx::query::QueryAs<
-                    'q,
-                    sqlx::Postgres,
-                    <Self as filter_traits::Filterable>::Entity,
-                    sqlx::postgres::PgArguments
-                > {
-                    match self { #(#bind_arms),* }
-                }
-            }
-
-    impl #enum_name {
-        pub async fn filter_all(
-            pool: &sqlx::PgPool,
-            filters: Vec<Self>,
-        ) -> Result<
-            Vec<<Self as filter_traits::Filterable>::Entity>,
-            anyhow::Error
-        > {
-            let sql = Self::to_sql(&filters);
-            let mut q = sqlx::query_as::<_, <Self as filter_traits::Filterable>::Entity>(&sql);
-            let q = filters.into_iter().fold(q, |qq, f| f.bind(qq));
-            q.fetch_all(pool).await.map_err(Into::into)
-        }
-
-        #[cfg(test)]
-        pub fn to_sql(filters: &[Self]) -> String {
-            let where_clause = filters
-                .iter()
-                .enumerate()
-                .map(|(i, f)| f.filter_clause(i + 1))
-                .collect::<Vec<_>>()
-                .join(" AND ");
-
-            if where_clause.is_empty() {
-                format!("SELECT * FROM {}", Self::table_name())
-            } else {
-                format!("SELECT * FROM {} WHERE {}", Self::table_name(), where_clause)
-            }
-        }
-    }
-        };
-    TokenStream::from(out)
+    Kind::UuidOrScalarEq
 }
 
-#[proc_macro_derive(IntoFilters, attributes(filter, filter_query))]
-pub fn derive_into_filters(input: TokenStream) -> TokenStream {
-    use heck::ToUpperCamelCase;
-    use quote::quote;
-    use syn::{parse_macro_input, Data, DeriveInput, Lit, Meta, NestedMeta};
+fn parse_string_operators(field_name: &str) -> Vec<proc_macro2::TokenStream> {
+    let v_eq = format_ident!("{}Eq", field_name);
+    let v_neq = format_ident!("{}Neq", field_name);
+    let v_like = format_ident!("{}Like", field_name);
+    let v_not_like = format_ident!("{}NotLike", field_name);
+    let v_is_null = format_ident!("{}IsNull", field_name);
+    let v_is_not_null = format_ident!("{}IsNotNull", field_name);
 
-    let input = parse_macro_input!(input as DeriveInput);
-    let struct_id = &input.ident;
-
-    let mut enum_ident = None::<syn::Ident>;
-    for attr in &input.attrs {
-        if let Ok(Meta::List(list)) = attr.parse_meta() {
-            if list.path.is_ident("filter_query") {
-                for nm in list.nested {
-                    if let NestedMeta::Meta(Meta::NameValue(nv)) = nm {
-                        if nv.path.is_ident("target") {
-                            if let Lit::Str(s) = &nv.lit {
-                                enum_ident = Some(syn::Ident::new(&s.value(), s.span()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let enum_ident =
-        enum_ident.expect("missing #[filter_query(target = \"...\")] on filter-query struct");
-
-    let Data::Struct(ds) = &input.data else {
-        panic!("IntoFilters can only be derived for structs")
-    };
-
-    let mut push_arms = Vec::new();
-
-    for f in ds.fields.iter() {
-        let ident = f
-            .ident
-            .as_ref()
-            .expect("IntoFilters only works with named fields");
-
-        let ty_path = match &f.ty {
-            syn::Type::Path(p) => p,
-            _ => panic!("field {} is not of type Option<…>", ident),
-        };
-        let segment = &ty_path.path.segments;
-        if segment.last().unwrap().ident != "Option" {
-            panic!("field {} must be Option<…>", ident);
-        }
-
-        let mut variant = None::<String>;
-        for attr in &f.attrs {
-            if let Ok(Meta::List(list)) = attr.parse_meta() {
-                if list.path.is_ident("filter") {
-                    for nm in list.nested {
-                        if let NestedMeta::Meta(Meta::NameValue(nv)) = nm {
-                            if nv.path.is_ident("name") {
-                                if let Lit::Str(s) = &nv.lit {
-                                    variant = Some(s.value());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let variant_name = variant.unwrap_or_else(|| ident.to_string().to_upper_camel_case());
-        let variant_ident = syn::Ident::new(&variant_name, ident.span());
-
-        push_arms.push(quote! {
-            if let Some(v) = s.#ident {
-                filters.push(#enum_ident::#variant_ident(v));
-            }
-        });
-    }
-
-    let out = quote! {
-    impl ::std::convert::TryFrom<#struct_id> for Vec<#enum_ident> {
-        type Error = anyhow::Error;
-
-        fn try_from(s: #struct_id) -> Result<Self, Self::Error> {
-            use ::validator::Validate as _;
-            s.validate()?;
-
-            let mut filters = Vec::new();
-            #(#push_arms)*
-            Ok(filters)
-        }
-    }
-
-            impl ::filter_traits::IntoFilters<#enum_ident> for #struct_id {
-                fn into_filters(self) -> Result<Vec<#enum_ident>, anyhow::Error> {
-                    <Vec<#enum_ident>>::try_from(self)
-                }
-            }
-        };
-    TokenStream::from(out)
+    vec![
+        quote! { #v_eq(String) },
+        quote! { #v_neq(String) },
+        quote! { #v_like(String) },
+        quote! { #v_not_like(String) },
+        quote! { #v_is_null },
+        quote! { #v_is_not_null },
+    ]
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{infer_column, Operator, SUFFIXES};
+fn parse_boolean_operators(field_name: &str) -> Vec<proc_macro2::TokenStream> {
+    let v_true = format_ident!("{}IsTrue", field_name);
+    let v_false = format_ident!("{}IsFalse", field_name);
 
-    #[test]
-    fn infer_no_suffix() {
-        assert_eq!(infer_column("FooBar"), "foo_bar");
-    }
+    vec![quote! { #v_true }, quote! { #v_false }]
+}
 
-    #[test]
-    fn infer_every_suffix() {
-        for &s in &SUFFIXES {
-            assert_eq!(infer_column(&format!("X{}", s)), "x", "suffix {s}");
-        }
-    }
+fn parse_numeric_operators(field_name: &str, r#type: &syn::Type) -> Vec<proc_macro2::TokenStream> {
+    let v_eq = format_ident!("{}Eq", field_name);
+    let v_neq = format_ident!("{}Neq", field_name);
+    let v_gt = format_ident!("{}Gt", field_name);
+    let v_gte = format_ident!("{}Gte", field_name);
+    let v_lt = format_ident!("{}Lt", field_name);
+    let v_lte = format_ident!("{}Lte", field_name);
+    let v_between = format_ident!("{}Between", field_name);
+    let v_not_between = format_ident!("{}NotBetween", field_name);
 
-    #[test]
-    fn operator_parse_display_roundtrip() {
-        for key in [
-            "eq",
-            "neq",
-            "gt",
-            "gte",
-            "lt",
-            "lte",
-            "like",
-            "not_like",
-            "in",
-            "not_in",
-            "between",
-            "not_between",
-            "is_null",
-            "not_null",
-        ] {
-            let op: Operator = key.parse().unwrap();
-            assert!(!op.to_string().is_empty());
-        }
-    }
+    vec![
+        quote! { #v_eq(#r#type) },
+        quote! { #v_neq(#r#type) },
+        quote! { #v_gt(#r#type) },
+        quote! { #v_gte(#r#type) },
+        quote! { #v_lt(#r#type) },
+        quote! { #v_lte(#r#type) },
+        quote! { #v_between(#r#type, #r#type) },
+        quote! { #v_not_between(#r#type, #r#type) },
+    ]
+}
+
+fn parse_uuid_or_scalar_operators(
+    field_name: &str,
+    r#type: &syn::Type,
+) -> Vec<proc_macro2::TokenStream> {
+    let v_eq = format_ident!("{}Eq", field_name);
+    let v_neq = format_ident!("{}Neq", field_name);
+    let v_is_null = format_ident!("{}IsNull", field_name);
+    let v_is_not_null = format_ident!("{}IsNotNull", field_name);
+
+    vec![
+        quote! { #v_eq(#r#type) },
+        quote! { #v_neq(#r#type) },
+        quote! { #v_is_null },
+        quote! { #v_is_not_null },
+    ]
+}
+
+fn parse_datetime_operators(field_name: &str, r#type: &syn::Type) -> Vec<proc_macro2::TokenStream> {
+    let v_on = format_ident!("{}On", field_name);
+    let v_between = format_ident!("{}Between", field_name);
+    let v_is_null = format_ident!("{}IsNull", field_name);
+    let v_is_not_null = format_ident!("{}IsNotNull", field_name);
+
+    vec![
+        quote! { #v_on(#r#type) },
+        quote! { #v_between(#r#type, #r#type) },
+        quote! { #v_is_null },
+        quote! { #v_is_not_null },
+    ]
 }

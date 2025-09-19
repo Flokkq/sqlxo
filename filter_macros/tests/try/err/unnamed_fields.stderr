@@ -1,0 +1,5 @@
+error: Query derive requires a struct with named fields
+ --> tests/try/err/unnamed_fields.rs:4:13
+  |
+4 | pub struct T(String, i32);
+  |             ^^^^^^^^^^^^^

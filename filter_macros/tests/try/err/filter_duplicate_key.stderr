@@ -1,0 +1,5 @@
+error: duplicate key `table_name` in #[filter]
+ --> tests/try/err/filter_duplicate_key.rs:4:28
+  |
+4 | #[filter(table_name = "a", table_name = "b")]
+  |                            ^^^^^^^^^^^^^^^^

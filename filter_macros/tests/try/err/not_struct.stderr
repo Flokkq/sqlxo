@@ -1,0 +1,5 @@
+error: Query derive only supports structs
+ --> tests/try/err/not_struct.rs:4:10
+  |
+4 | pub enum E {
+  |          ^

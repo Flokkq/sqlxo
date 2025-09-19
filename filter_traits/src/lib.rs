@@ -1,6 +1,3 @@
-use sqlx::postgres::PgArguments;
-use sqlx::query::QueryAs;
-use sqlx::Postgres;
 
 pub trait Filterable {
     type Entity: Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>;
@@ -17,3 +14,7 @@ pub trait Filterable {
 pub trait IntoFilters<F> {
     fn into_filters(self) -> Result<Vec<F>, anyhow::Error>;
 }
+
+pub trait Sortable {}
+
+pub trait Model {}

@@ -1,0 +1,5 @@
+error: unknown key in #[filter]; only `table_name` is supported
+ --> tests/try/err/filter_unknown_key.rs:4:10
+  |
+4 | #[filter(foo = "bar")]
+  |          ^^^^^^^^^^^
