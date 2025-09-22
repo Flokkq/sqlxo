@@ -2,7 +2,7 @@ use filter_macros::Query;
 use filter_traits::QueryContext;
 use sqlx::FromRow;
 
-#[derive(Debug, FromRow, Query)]
+#[derive(Debug, Clone, FromRow, Query)]
 pub struct SnakeCaseName {
     pub name: String,
 }

@@ -3,7 +3,7 @@ use filter_macros::Query;
 use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(Debug, FromRow, Query)]
+#[derive(Debug, Clone, FromRow, Query)]
 pub struct X {
     pub id: Option<Uuid>,
     pub name: Option<String>,

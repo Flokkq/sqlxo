@@ -8,7 +8,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 #[allow(dead_code)]
-#[derive(Debug, FromRow, Query)]
+#[derive(Debug, Clone, FromRow, Query)]
 #[filter(table_name = "item")]
 pub struct Item {
     id: Uuid,

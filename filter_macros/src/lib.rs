@@ -117,6 +117,7 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
         impl filter_traits::QueryContext for #struct_ident {
             const TABLE: &'static str = #table_name;
 
+            type Model = #struct_ident;
             type Query = #query_ident;
             type Sort  = #sort_ident;
         }

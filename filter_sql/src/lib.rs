@@ -1,4 +1,5 @@
-use filter_traits::Filterable;
+use filter_traits::{Filterable, QueryContext};
+use sqlx::{postgres::PgArguments, Postgres};
 
 pub mod repo;
 
@@ -19,10 +20,7 @@ where
     }
 }
 
-impl<T> Expression<T>
-where
-    T: Filterable,
-{
+impl<T: Filterable> Expression<T> {
     pub fn to_sql(&self, idx: &mut usize) -> String {
         match self {
             Expression::Leaf(q) => q.filter_clause(idx),
@@ -38,39 +36,97 @@ where
     }
 }
 
+impl<T> Expression<T>
+where
+    T: Filterable + Clone,
+{
+    pub fn bind_into<'q>(
+        &self,
+        mut q: sqlx::query::QueryAs<'q, sqlx::Postgres, T::Entity, sqlx::postgres::PgArguments>,
+    ) -> sqlx::query::QueryAs<'q, sqlx::Postgres, T::Entity, sqlx::postgres::PgArguments> {
+        match self {
+            Self::Leaf(f) => f.clone().bind(q),
+            Self::And(xs) | Self::Or(xs) => {
+                for x in xs {
+                    q = x.bind_into(q);
+                }
+                q
+            }
+        }
+    }
+}
+
 pub struct SortOrder<T /*:Sortable*/>(Vec<T>);
 pub struct Page {}
 
-pub struct QueryBuilder<'a, T: Filterable> {
+pub struct QueryBuilder<'a, C: QueryContext> {
     table: &'a str,
-    where_expr: Option<Expression<T>>,
+    where_expr: Option<Expression<C::Query>>,
 }
 
-impl<'a, T> QueryBuilder<'a, T>
+impl<'a, C> QueryBuilder<'a, C>
 where
-    T: Filterable,
+    C: QueryContext,
 {
-    pub fn from(table: &'a str) -> Self {
+    pub fn from_ctx() -> Self {
         Self {
-            table,
+            table: C::TABLE,
             where_expr: None,
         }
     }
 
-    pub fn r#where(mut self, e: Expression<T>) -> Self {
+    pub fn r#where(mut self, e: Expression<C::Query>) -> Self {
         self.where_expr = Some(e);
         self
     }
 
-    #[doc(hidden)]
     fn to_sql(&self) -> String {
         let mut idx = 0;
-
         let where_sql = match &self.where_expr {
             Some(e) => e.to_sql(&mut idx),
             None => "TRUE".to_string(),
         };
         format!("SELECT * FROM {} WHERE {}", self.table, where_sql)
+    }
+
+    pub fn build(self) -> BuiltQuery<C> {
+        BuiltQuery {
+            sql: self.to_sql(),
+            where_expr: self.where_expr,
+        }
+    }
+}
+
+pub struct BuiltQuery<C: QueryContext> {
+    sql: String,
+    where_expr: Option<Expression<C::Query>>,
+}
+
+impl<C> BuiltQuery<C>
+where
+    C: QueryContext,
+    C::Query: Filterable<Entity = C::Model>,
+{
+    pub fn as_query(&self) -> sqlx::query::QueryAs<'_, Postgres, C::Model, PgArguments> {
+        let q = sqlx::query_as::<_, C::Model>(self.sql.as_str());
+        match &self.where_expr {
+            Some(e) => e.bind_into(q),
+            None => q,
+        }
+    }
+
+    pub async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<C::Model>, sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = Postgres>,
+    {
+        self.as_query().fetch_all(exec).await
+    }
+
+    pub async fn fetch_one<'e, E>(&self, exec: E) -> Result<C::Model, sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = Postgres>,
+    {
+        self.as_query().fetch_one(exec).await
     }
 }
 
@@ -105,7 +161,7 @@ mod tests {
     use crate::*;
 
     #[allow(dead_code)]
-    #[derive(Debug, FromRow, Query)]
+    #[derive(Debug, FromRow, Clone, Query)]
     pub struct Item {
         id: Uuid,
         name: String,
@@ -197,5 +253,20 @@ mod tests {
         let count = repo.count(e);
 
         assert_eq!(items.len(), count);
+    }
+
+    #[test]
+    fn query_builder() {
+        let built: BuiltQuery<Item> = QueryBuilder::from_ctx()
+            .r#where(and![
+                ItemQuery::NameLike("Clemens".into()),
+                or![ItemQuery::PriceGt(1800.00f32), ItemQuery::DescriptionIsNull,]
+            ])
+            .build();
+
+        assert_eq!(
+            built.sql,
+            "SELECT * FROM item WHERE (name LIKE $1 AND (price > $2 OR description IS NULL))"
+        )
     }
 }

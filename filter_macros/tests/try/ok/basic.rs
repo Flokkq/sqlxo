@@ -3,7 +3,7 @@ use filter_traits::QueryContext;
 use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(Debug, FromRow, Query)]
+#[derive(Debug, Clone, FromRow, Query)]
 #[filter(table_name = "item")]
 pub struct Item {
     pub id: Uuid,

@@ -12,8 +12,9 @@ pub trait Filterable {
 pub trait QueryContext {
     const TABLE: &'static str;
 
-    type Query: Filterable + Send + Sync;
-    type Sort: Sortable + Send + Sync;
+    type Model: Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + 'static;
+    type Query: Filterable + Send + Clone + Sync;
+    type Sort: Sortable + Send + Clone + Sync;
 }
 
 pub trait Sortable {}

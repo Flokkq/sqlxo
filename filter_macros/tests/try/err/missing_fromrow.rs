@@ -1,7 +1,6 @@
 use filter_macros::Query;
-use sqlx::FromRow;
 
-#[derive(Debug, Query)]
+#[derive(Debug, Clone, Query)]
 #[filter(table_name = "a")]
 pub struct T {
     pub name: String,
