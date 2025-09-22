@@ -1,21 +1,78 @@
+use filter_traits::Filterable;
+
 pub mod repo;
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Expression<T /*: Filterable */> {
+pub enum Expression<T: Filterable> {
     And(Vec<Expression<T>>),
     Or(Vec<Expression<T>>),
     Leaf(T),
 }
 
 // Wrap raw leaf
-impl<T> From<T> for Expression<T> {
+impl<T> From<T> for Expression<T>
+where
+    T: Filterable,
+{
     fn from(t: T) -> Self {
         Expression::Leaf(t)
     }
 }
 
+impl<T> Expression<T>
+where
+    T: Filterable,
+{
+    pub fn to_sql(&self, idx: &mut usize) -> String {
+        match self {
+            Expression::Leaf(q) => q.filter_clause(idx),
+            Expression::And(xs) => {
+                let parts: Vec<String> = xs.iter().map(|x| x.to_sql(idx)).collect();
+                format!("({})", parts.join(" AND "))
+            }
+            Expression::Or(xs) => {
+                let parts: Vec<String> = xs.iter().map(|x| x.to_sql(idx)).collect();
+                format!("({})", parts.join(" OR "))
+            }
+        }
+    }
+}
+
 pub struct SortOrder<T /*:Sortable*/>(Vec<T>);
 pub struct Page {}
+
+pub struct QueryBuilder<'a, T: Filterable> {
+    table: &'a str,
+    where_expr: Option<Expression<T>>,
+}
+
+impl<'a, T> QueryBuilder<'a, T>
+where
+    T: Filterable,
+{
+    pub fn from(table: &'a str) -> Self {
+        Self {
+            table,
+            where_expr: None,
+        }
+    }
+
+    pub fn r#where(mut self, e: Expression<T>) -> Self {
+        self.where_expr = Some(e);
+        self
+    }
+
+    #[doc(hidden)]
+    fn to_sql(&self) -> String {
+        let mut idx = 0;
+
+        let where_sql = match &self.where_expr {
+            Some(e) => e.to_sql(&mut idx),
+            None => "TRUE".to_string(),
+        };
+        format!("SELECT * FROM {} WHERE {}", self.table, where_sql)
+    }
+}
 
 #[macro_export]
 macro_rules! and {
