@@ -1,4 +1,5 @@
 use filter_macros::Query;
+use filter_traits::QueryContext;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -12,7 +13,7 @@ pub struct Item {
 }
 
 fn main() {
-    let _ = ITEM_TABLE;
+    let _ = <Item as QueryContext>::TABLE;
 
     enum _Use {
         A(ItemQuery),

@@ -2,6 +2,7 @@ use crate::ItemQuery::*;
 use crate::ItemSort::*;
 use filter_macros::Query;
 use filter_traits::Filterable;
+use filter_traits::QueryContext;
 use sqlx::Execute;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -21,7 +22,7 @@ pub struct Item {
 
 #[test]
 fn table_const() {
-    assert_eq!(ITEM_TABLE, "item");
+    assert_eq!(<Item as QueryContext>::TABLE, "item");
 }
 
 #[test]

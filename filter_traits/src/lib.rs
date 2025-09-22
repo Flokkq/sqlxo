@@ -9,6 +9,13 @@ pub trait Filterable {
     ) -> sqlx::query::QueryAs<'q, sqlx::Postgres, Self::Entity, sqlx::postgres::PgArguments>;
 }
 
+pub trait QueryContext {
+    const TABLE: &'static str;
+
+    type Query: Filterable + Send + Sync;
+    type Sort: Sortable + Send + Sync;
+}
+
 pub trait Sortable {}
 
 pub trait Model {}

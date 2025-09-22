@@ -1,6 +1,6 @@
 #![feature(let_chains)]
 
-use heck::{ToPascalCase, ToShoutySnakeCase, ToSnakeCase};
+use heck::{ToPascalCase, ToSnakeCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Error, Fields, Lit, Meta, NestedMeta, Visibility};
@@ -25,8 +25,6 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
 
     let query_ident = format_ident!("{}Query", input.ident);
     let sort_ident = format_ident!("{}Sort", input.ident);
-    let table_const_ident =
-        format_ident!("{}_TABLE", input.ident.to_string().to_shouty_snake_case());
 
     let data = match &input.data {
         Data::Struct(s) => s,
@@ -116,7 +114,12 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
     let struct_ident = &input.ident;
 
     let expanded = quote! {
-        pub const #table_const_ident: &str = #table_name;
+        impl filter_traits::QueryContext for #struct_ident {
+            const TABLE: &'static str = #table_name;
+
+            type Query = #query_ident;
+            type Sort  = #sort_ident;
+        }
 
         #[derive(Debug, Clone, PartialEq)]
         pub enum #query_ident {
@@ -127,6 +130,7 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
         pub enum #sort_ident {
             #(#sort_variants),*
         }
+
 
         impl filter_traits::Filterable for #query_ident {
             type Entity = #struct_ident;
@@ -156,6 +160,8 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
                 }
             }
         }
+
+        impl filter_traits::Sortable for #sort_ident { }
     };
 
     expanded.into()

@@ -1,4 +1,5 @@
 use filter_macros::Query;
+use filter_traits::QueryContext;
 use sqlx::FromRow;
 
 #[derive(Debug, FromRow, Query)]
@@ -7,5 +8,5 @@ pub struct SnakeCaseName {
 }
 
 fn main() {
-    assert_eq!(SNAKE_CASE_NAME_TABLE, "snake_case_name");
+    assert_eq!(<SnakeCaseName as QueryContext>::TABLE, "snake_case_name");
 }
