@@ -1,5 +1,5 @@
 error: unknown key in #[filter]; only `table_name` is supported
- --> tests/try/err/filter_unknown_key.rs:4:10
+ --> tests/try/err/filter_unknown_key.rs:5:10
   |
-4 | #[filter(foo = "bar")]
+5 | #[filter(foo = "bar")]
   |          ^^^^^^^^^^^

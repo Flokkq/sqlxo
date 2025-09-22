@@ -1,6 +1,7 @@
 use filter_macros::Query;
+use sqlx::FromRow;
 
-#[derive(Query)]
+#[derive(Debug, FromRow, Query)]
 pub struct SnakeCaseName {
     pub name: String,
 }

@@ -12,7 +12,7 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     if !matches!(input.vis, Visibility::Public(_)) {
-        return Error::new_spanned(&input.vis, "Query derives requires a `pub` struct")
+        return Error::new_spanned(&input.vis, "`Query` derives requires a `pub` struct")
             .to_compile_error()
             .into();
     }
@@ -31,7 +31,7 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
     let data = match &input.data {
         Data::Struct(s) => s,
         _not_supported => {
-            return Error::new_spanned(&input.ident, "Query derive only supports structs")
+            return Error::new_spanned(&input.ident, "`Query` derive only supports structs")
                 .to_compile_error()
                 .into();
         }
@@ -42,7 +42,7 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
         not_supported => {
             return Error::new_spanned(
                 not_supported,
-                "Query derive requires a struct with named fields",
+                "`Query` derive requires a struct with named fields",
             )
             .to_compile_error()
             .into()
@@ -51,10 +51,13 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
 
     let mut query_variants: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut sort_variants: Vec<proc_macro2::TokenStream> = Vec::new();
+    let mut sql_arms: Vec<proc_macro2::TokenStream> = Vec::new();
+    let mut bind_arms: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for field in fields.iter() {
         let field_name = field.ident.clone().unwrap();
         let field_name_pascal = field_name.to_string().to_pascal_case();
+        let field_name_snake = field_name.to_string().to_snake_case();
         let r#type = &field.ty;
 
         let asc = format_ident!("By{}Asc", field_name_pascal);
@@ -63,19 +66,54 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
         sort_variants.push(quote! { #desc });
 
         match classify_type(r#type) {
-            Kind::String => query_variants.extend(parse_string_operators(&field_name_pascal)),
-            Kind::Bool => query_variants.extend(parse_boolean_operators(&field_name_pascal)),
+            Kind::String => {
+                query_variants.extend(parse_string_operators(&field_name_pascal));
+                add_string_impls(
+                    &mut sql_arms,
+                    &mut bind_arms,
+                    &field_name_snake,
+                    &field_name_pascal,
+                );
+            }
+            Kind::Bool => {
+                query_variants.extend(parse_boolean_operators(&field_name_pascal));
+                add_bool_impls(
+                    &mut sql_arms,
+                    &mut bind_arms,
+                    &field_name_snake,
+                    &field_name_pascal,
+                );
+            }
             Kind::Number => {
-                query_variants.extend(parse_numeric_operators(&field_name_pascal, r#type))
+                query_variants.extend(parse_numeric_operators(&field_name_pascal, r#type));
+                add_numeric_impls(
+                    &mut sql_arms,
+                    &mut bind_arms,
+                    &field_name_snake,
+                    &field_name_pascal,
+                );
             }
             Kind::UuidOrScalarEq => {
-                query_variants.extend(parse_uuid_or_scalar_operators(&field_name_pascal, r#type))
+                query_variants.extend(parse_uuid_or_scalar_operators(&field_name_pascal, r#type));
+                add_uuid_impls(
+                    &mut sql_arms,
+                    &mut bind_arms,
+                    &field_name_snake,
+                    &field_name_pascal,
+                );
             }
             Kind::DateTime => {
-                query_variants.extend(parse_datetime_operators(&field_name_pascal, r#type))
+                query_variants.extend(parse_datetime_operators(&field_name_pascal, r#type));
+                add_datetime_impls(
+                    &mut sql_arms,
+                    &mut bind_arms,
+                    &field_name_snake,
+                    &field_name_pascal,
+                );
             }
         }
     }
+    let struct_ident = &input.ident;
 
     let expanded = quote! {
         pub const #table_const_ident: &str = #table_name;
@@ -88,6 +126,35 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum #sort_ident {
             #(#sort_variants),*
+        }
+
+        impl filter_traits::Filterable for #query_ident {
+            type Entity = #struct_ident;
+
+            fn filter_clause(&self, idx: &mut usize) -> String {
+                match self {
+                    #(#sql_arms),*
+                }
+            }
+
+            fn bind<'q>(
+                self,
+                q: sqlx::query::QueryAs<
+                    'q,
+                    sqlx::Postgres,
+                    Self::Entity,
+                    sqlx::postgres::PgArguments
+                >
+            ) -> sqlx::query::QueryAs<
+                'q,
+                sqlx::Postgres,
+                Self::Entity,
+                sqlx::postgres::PgArguments
+            > {
+                match self {
+                    #(#bind_arms),*
+                }
+            }
         }
     };
 
@@ -299,4 +366,124 @@ fn parse_datetime_operators(field_name: &str, r#type: &syn::Type) -> Vec<proc_ma
         quote! { #v_is_null },
         quote! { #v_is_not_null },
     ]
+}
+
+fn add_string_impls(
+    sql: &mut Vec<proc_macro2::TokenStream>,
+    bind: &mut Vec<proc_macro2::TokenStream>,
+    col: &str,
+    name: &str,
+) {
+    let eq = format_ident!("{}Eq", name);
+    sql.push(quote! { Self::#eq(_) => { *idx+=1; format!("{} = ${}", #col, *idx) } });
+    bind.push(quote! { Self::#eq(v) => q.bind(v) });
+
+    let neq = format_ident!("{}Neq", name);
+    sql.push(quote! { Self::#neq(_) => { *idx+=1; format!("{} <> ${}", #col, *idx) } });
+    bind.push(quote! { Self::#neq(v) => q.bind(v) });
+
+    let like = format_ident!("{}Like", name);
+    sql.push(quote! { Self::#like(_) => { *idx+=1; format!("{} LIKE ${}", #col, *idx) } });
+    bind.push(quote! { Self::#like(v) => q.bind(v) });
+
+    let not_like = format_ident!("{}NotLike", name);
+    sql.push(quote! { Self::#not_like(_) => { *idx+=1; format!("{} NOT LIKE ${}", #col, *idx) } });
+    bind.push(quote! { Self::#not_like(v) => q.bind(v) });
+
+    let is_null = format_ident!("{}IsNull", name);
+    sql.push(quote! { Self::#is_null => format!("{} IS NULL", #col) });
+    bind.push(quote! { Self::#is_null => q });
+
+    let is_not_null = format_ident!("{}IsNotNull", name);
+    sql.push(quote! { Self::#is_not_null => format!("{} IS NOT NULL", #col) });
+    bind.push(quote! { Self::#is_not_null => q });
+}
+
+fn add_bool_impls(
+    sql: &mut Vec<proc_macro2::TokenStream>,
+    bind: &mut Vec<proc_macro2::TokenStream>,
+    col: &str,
+    name: &str,
+) {
+    let is_true = format_ident!("{}IsTrue", name);
+    sql.push(quote! { Self::#is_true => format!("{} = TRUE", #col) });
+    bind.push(quote! { Self::#is_true => q });
+
+    let is_false = format_ident!("{}IsFalse", name);
+    sql.push(quote! { Self::#is_false => format!("{} = FALSE", #col) });
+    bind.push(quote! { Self::#is_false => q });
+}
+
+fn add_numeric_impls(
+    sql: &mut Vec<proc_macro2::TokenStream>,
+    bind: &mut Vec<proc_macro2::TokenStream>,
+    col: &str,
+    name: &str,
+) {
+    let ops = [
+        ("Eq", "="),
+        ("Neq", "<>"),
+        ("Gt", ">"),
+        ("Gte", ">="),
+        ("Lt", "<"),
+        ("Lte", "<="),
+    ];
+    for (suffix, op) in ops {
+        let ident = format_ident!("{}{}", name, suffix);
+        sql.push(quote! { Self::#ident(_) => { *idx+=1; format!("{} {} ${}", #col,#op,*idx) } });
+        bind.push(quote! { Self::#ident(v) => q.bind(v) });
+    }
+    let between = format_ident!("{}Between", name);
+    sql.push(quote! { Self::#between(_,_) => { *idx+=1; let a=*idx; *idx+=1; let b=*idx; format!("{} BETWEEN ${} AND ${}", #col,a,b) } });
+    bind.push(quote! { Self::#between(v1,v2) => q.bind(v1).bind(v2) });
+
+    let not_between = format_ident!("{}NotBetween", name);
+    sql.push(quote! { Self::#not_between(_,_) => { *idx+=1; let a=*idx; *idx+=1; let b=*idx; format!("{} NOT BETWEEN ${} AND ${}", #col,a,b) } });
+    bind.push(quote! { Self::#not_between(v1,v2) => q.bind(v1).bind(v2) });
+}
+
+fn add_uuid_impls(
+    sql: &mut Vec<proc_macro2::TokenStream>,
+    bind: &mut Vec<proc_macro2::TokenStream>,
+    col: &str,
+    name: &str,
+) {
+    let eq = format_ident!("{}Eq", name);
+    sql.push(quote! { Self::#eq(_) => { *idx+=1; format!("{} = ${}", #col,*idx) } });
+    bind.push(quote! { Self::#eq(v) => q.bind(v) });
+
+    let neq = format_ident!("{}Neq", name);
+    sql.push(quote! { Self::#neq(_) => { *idx+=1; format!("{} <> ${}", #col,*idx) } });
+    bind.push(quote! { Self::#neq(v) => q.bind(v) });
+
+    let is_null = format_ident!("{}IsNull", name);
+    sql.push(quote! { Self::#is_null => format!("{} IS NULL", #col) });
+    bind.push(quote! { Self::#is_null => q });
+
+    let is_not_null = format_ident!("{}IsNotNull", name);
+    sql.push(quote! { Self::#is_not_null => format!("{} IS NOT NULL", #col) });
+    bind.push(quote! { Self::#is_not_null => q });
+}
+
+fn add_datetime_impls(
+    sql: &mut Vec<proc_macro2::TokenStream>,
+    bind: &mut Vec<proc_macro2::TokenStream>,
+    col: &str,
+    name: &str,
+) {
+    let on = format_ident!("{}On", name);
+    sql.push(quote! { Self::#on(_) => { *idx+=1; format!("{} = ${}", #col,*idx) } });
+    bind.push(quote! { Self::#on(v) => q.bind(v) });
+
+    let between = format_ident!("{}Between", name);
+    sql.push(quote! { Self::#between(_,_) => { *idx+=1; let a=*idx; *idx+=1; let b=*idx; format!("{} BETWEEN ${} AND ${}", #col,a,b) } });
+    bind.push(quote! { Self::#between(v1,v2) => q.bind(v1).bind(v2) });
+
+    let is_null = format_ident!("{}IsNull", name);
+    sql.push(quote! { Self::#is_null => format!("{} IS NULL", #col) });
+    bind.push(quote! { Self::#is_null => q });
+
+    let is_not_null = format_ident!("{}IsNotNull", name);
+    sql.push(quote! { Self::#is_not_null => format!("{} IS NOT NULL", #col) });
+    bind.push(quote! { Self::#is_not_null => q });
 }

@@ -1,7 +1,8 @@
 use filter_macros::Query;
+use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(Query)]
+#[derive(Debug, FromRow, Query)]
 #[filter(table_name = "item")]
 pub struct Item {
     pub id: Uuid,
@@ -9,6 +10,7 @@ pub struct Item {
     pub active: bool,
     pub price: f32,
 }
+
 fn main() {
     let _ = ITEM_TABLE;
 

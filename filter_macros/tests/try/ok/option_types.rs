@@ -1,8 +1,9 @@
 use chrono::Utc;
 use filter_macros::Query;
+use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(Query)]
+#[derive(Debug, FromRow, Query)]
 pub struct X {
     pub id: Option<Uuid>,
     pub name: Option<String>,

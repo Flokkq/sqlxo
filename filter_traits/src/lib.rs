@@ -1,18 +1,12 @@
-
 pub trait Filterable {
     type Entity: Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>;
 
-    fn table_name() -> &'static str;
-    fn filter_clause(&self, idx: usize) -> String;
+    fn filter_clause(&self, idx: &mut usize) -> String;
 
     fn bind<'q>(
         self,
         q: sqlx::query::QueryAs<'q, sqlx::Postgres, Self::Entity, sqlx::postgres::PgArguments>,
     ) -> sqlx::query::QueryAs<'q, sqlx::Postgres, Self::Entity, sqlx::postgres::PgArguments>;
-}
-
-pub trait IntoFilters<F> {
-    fn into_filters(self) -> Result<Vec<F>, anyhow::Error>;
 }
 
 pub trait Sortable {}

@@ -1,6 +1,8 @@
 use crate::ItemQuery::*;
 use crate::ItemSort::*;
 use filter_macros::Query;
+use filter_traits::Filterable;
+use sqlx::Execute;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -86,4 +88,107 @@ fn sort_enum_variants_exist() {
     let _ = ByDueDateDesc;
     let _ = ByIdAsc;
     let _ = ByIdDesc;
+}
+
+#[test]
+fn query_enum_generates_expected_sql() {
+    let mut idx = 0;
+    assert_eq!(
+        ItemQuery::NameEq("foo".into()).filter_clause(&mut idx),
+        "name = $1"
+    );
+    assert_eq!(idx, 1);
+
+    assert_eq!(
+        ItemQuery::PriceGt(42.0).filter_clause(&mut idx),
+        "price > $2"
+    );
+    assert_eq!(idx, 2);
+
+    assert_eq!(
+        ItemQuery::ActiveIsTrue.filter_clause(&mut idx),
+        "active = TRUE"
+    );
+    assert_eq!(idx, 2, "no new bind parameter for pure boolean expr");
+}
+
+#[test]
+fn query_enum_full_query_matches_handwritten() {
+    let mut idx = 0;
+    let clause = ItemQuery::NameEq("foo".into()).filter_clause(&mut idx);
+    let generated = format!("SELECT * FROM item WHERE ({clause})");
+
+    let handwritten = "SELECT * FROM item WHERE (name = $1)";
+
+    assert_eq!(generated, handwritten);
+}
+
+use sqlx::{postgres::PgArguments, Arguments};
+
+#[test]
+fn bind_adds_expected_number_of_args_for_string_eq() {
+    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE name = $1");
+    let q = ItemQuery::NameEq("foo".into()).bind(q);
+
+    let mut q = q;
+    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
+    assert_eq!(args.len(), 1, "NameEq should bind 1 argument");
+}
+
+#[test]
+fn bind_adds_expected_number_of_args_for_between() {
+    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE price BETWEEN $1 AND $2");
+    let q = ItemQuery::PriceBetween(10.0_f32, 99.0_f32).bind(q);
+
+    let mut q = q;
+    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
+    assert_eq!(args.len(), 2, "PriceBetween should bind 2 arguments");
+}
+
+#[test]
+fn bind_for_bool_ops_binds_nothing() {
+    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE active = TRUE");
+    let q = ItemQuery::ActiveIsTrue.bind(q);
+
+    let mut q = q;
+    let args: PgArguments = q.take_arguments().unwrap_or_default().unwrap();
+    assert_eq!(args.len(), 0, "ActiveIsTrue should bind no arguments");
+}
+
+#[test]
+fn bind_chain_preserves_order_and_sql() {
+    let sql = "SELECT * FROM item WHERE name = $1 AND price > $2 AND active = TRUE";
+    let q = sqlx::query_as::<_, Item>(sql);
+
+    let q = ItemQuery::NameEq("foo".into()).bind(q);
+    let q = ItemQuery::PriceGt(42.0_f32).bind(q);
+    let q = ItemQuery::ActiveIsTrue.bind(q);
+
+    assert_eq!(q.sql(), sql);
+
+    let mut q = q;
+    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
+    assert_eq!(
+        args.len(),
+        2,
+        "two arguments should be bound for NameEq and PriceGt"
+    );
+}
+
+#[test]
+fn bind_for_uuid_and_datetime() {
+    let uid = Uuid::nil();
+    let now = chrono::Utc::now();
+
+    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE id = $1");
+    let q = ItemQuery::IdEq(uid).bind(q);
+    let mut q = q;
+    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
+    assert_eq!(args.len(), 1, "IdEq should bind 1 argument");
+
+    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE due_date BETWEEN $1 AND $2");
+    let q = ItemQuery::DueDateBetween(now, now).bind(q);
+    let mut q = q;
+    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
+    assert_eq!(args.len(), 2, "DueDateBetween should bind 2 arguments"
 }

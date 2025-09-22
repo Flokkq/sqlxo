@@ -1,5 +1,13 @@
-error: Query derive only supports structs
- --> tests/try/err/not_struct.rs:4:10
+error: enums are not supported
+ --> tests/try/err/not_struct.rs:5:1
   |
-4 | pub enum E {
+5 | / pub enum E {
+6 | |     A,
+7 | | }
+  | |_^
+
+error: `Query` derive only supports structs
+ --> tests/try/err/not_struct.rs:5:10
+  |
+5 | pub enum E {
   |          ^
