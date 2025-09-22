@@ -190,5 +190,5 @@ fn bind_for_uuid_and_datetime() {
     let q = ItemQuery::DueDateBetween(now, now).bind(q);
     let mut q = q;
     let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
-    assert_eq!(args.len(), 2, "DueDateBetween should bind 2 arguments"
+    assert_eq!(args.len(), 2, "DueDateBetween should bind 2 arguments");
 }
