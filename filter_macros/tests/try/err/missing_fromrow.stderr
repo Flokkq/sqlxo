@@ -14,11 +14,12 @@ error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
             (T1, T2, T3, T4, T5, T6, T7)
             (T1, T2, T3, T4, T5, T6, T7, T8)
           and $N others
+  = note: required for `<T as QueryContext>::Model` to implement `QueryModel`
 note: required by a bound in `filter_traits::QueryContext::Model`
  --> $WORKSPACE/filter_traits/src/lib.rs
   |
-  |     type Model: Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + 'static;
-  |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `QueryContext::Model`
+  |     type Model: QueryModel;
+  |                 ^^^^^^^^^^ required by this bound in `QueryContext::Model`
 
 error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
  --> tests/try/err/missing_fromrow.rs:5:12
@@ -36,8 +37,32 @@ error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
             (T1, T2, T3, T4, T5, T6, T7)
             (T1, T2, T3, T4, T5, T6, T7, T8)
           and $N others
+  = note: required for `<TQuery as Filterable>::Entity` to implement `QueryModel`
 note: required by a bound in `filter_traits::Filterable::Entity`
  --> $WORKSPACE/filter_traits/src/lib.rs
   |
-  |     type Entity: Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>;
-  |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Filterable::Entity`
+  |     type Entity: QueryModel;
+  |                  ^^^^^^^^^^ required by this bound in `Filterable::Entity`
+
+error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
+ --> tests/try/err/missing_fromrow.rs:5:12
+  |
+5 | pub struct T {
+  |            ^ the trait `for<'r> FromRow<'r, PgRow>` is not implemented for `T`
+  |
+  = help: the following other types implement trait `FromRow<'r, R>`:
+            ()
+            (T1, T2)
+            (T1, T2, T3)
+            (T1, T2, T3, T4)
+            (T1, T2, T3, T4, T5)
+            (T1, T2, T3, T4, T5, T6)
+            (T1, T2, T3, T4, T5, T6, T7)
+            (T1, T2, T3, T4, T5, T6, T7, T8)
+          and $N others
+  = note: required for `<TSort as Sortable>::Entity` to implement `QueryModel`
+note: required by a bound in `filter_traits::Sortable::Entity`
+ --> $WORKSPACE/filter_traits/src/lib.rs
+  |
+  |     type Entity: QueryModel;
+  |                  ^^^^^^^^^^ required by this bound in `Sortable::Entity`

@@ -51,6 +51,7 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
     let mut sort_variants: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut sql_arms: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut bind_arms: Vec<proc_macro2::TokenStream> = Vec::new();
+    let mut sort_sql_arms: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for field in fields.iter() {
         let field_name = field.ident.clone().unwrap();
@@ -62,6 +63,10 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
         let desc = format_ident!("By{}Desc", field_name_pascal);
         sort_variants.push(quote! { #asc });
         sort_variants.push(quote! { #desc });
+
+        let col: &str = &field_name_snake;
+        sort_sql_arms.push(quote! { Self::#asc  => format!("{} ASC",  #col) });
+        sort_sql_arms.push(quote! { Self::#desc => format!("{} DESC", #col) });
 
         match classify_type(r#type) {
             Kind::String => {
@@ -162,7 +167,15 @@ pub fn derive_queryt(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl filter_traits::Sortable for #sort_ident { }
+        impl filter_traits::Sortable for #sort_ident {
+            type Entity = #struct_ident;
+
+            fn sort_clause(&self) -> String {
+                match self {
+                    #(#sort_sql_arms),*
+                }
+            }
+        }
     };
 
     expanded.into()

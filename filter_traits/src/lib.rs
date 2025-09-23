@@ -1,5 +1,14 @@
+#![feature(trait_alias)]
+
+pub trait QueryModel =
+    Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + 'static;
+
+pub trait QueryQuery = Filterable + Send + Clone + Sync;
+
+pub trait QuerySort = Sortable + Send + Clone + Sync;
+
 pub trait Filterable {
-    type Entity: Send + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>;
+    type Entity: QueryModel;
 
     fn filter_clause(&self, idx: &mut usize) -> String;
 
@@ -12,11 +21,15 @@ pub trait Filterable {
 pub trait QueryContext {
     const TABLE: &'static str;
 
-    type Model: Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + 'static;
-    type Query: Filterable + Send + Clone + Sync;
-    type Sort: Sortable + Send + Clone + Sync;
+    type Model: QueryModel;
+    type Query: QueryQuery;
+    type Sort: QuerySort;
 }
 
-pub trait Sortable {}
+pub trait Sortable {
+    type Entity: QueryModel;
+
+    fn sort_clause(&self) -> String;
+}
 
 pub trait Model {}

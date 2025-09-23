@@ -1,4 +1,4 @@
-use filter_traits::{Filterable, QueryContext};
+use filter_traits::{Filterable, QueryContext, Sortable};
 use sqlx::{postgres::PgArguments, Postgres};
 
 pub mod repo;
@@ -56,12 +56,57 @@ where
     }
 }
 
-pub struct SortOrder<T /*:Sortable*/>(Vec<T>);
+#[derive(PartialEq, Debug, Clone)]
+pub struct SortOrder<T: Sortable>(Vec<T>);
+
+impl<T> SortOrder<T>
+where
+    T: Sortable + Clone,
+{
+    pub fn to_sql(&self) -> String {
+        let mut out = String::new();
+
+        for (i, s) in self.0.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+
+            out.push_str(&s.sort_clause());
+        }
+
+        out
+    }
+}
+
+impl<T: Sortable> From<Vec<T>> for SortOrder<T> {
+    fn from(v: Vec<T>) -> Self {
+        Self(v)
+    }
+}
+
 pub struct Page {}
+
+pub enum SelectType {
+    Star,
+    Aggregation(AggregationType),
+}
+
+pub enum AggregationType {
+    Max,
+    Min,
+    Count,
+    Avg,
+}
+pub enum BuildType {
+    Select(SelectType),
+    Update,
+    Delete,
+}
 
 pub struct QueryBuilder<'a, C: QueryContext> {
     table: &'a str,
     where_expr: Option<Expression<C::Query>>,
+    sort_expr: Option<SortOrder<C::Sort>>,
 }
 
 impl<'a, C> QueryBuilder<'a, C>
@@ -72,6 +117,7 @@ where
         Self {
             table: C::TABLE,
             where_expr: None,
+            sort_expr: None,
         }
     }
 
@@ -80,53 +126,88 @@ where
         self
     }
 
-    fn to_sql(&self) -> String {
-        let mut idx = 0;
-        let where_sql = match &self.where_expr {
-            Some(e) => e.to_sql(&mut idx),
-            None => "TRUE".to_string(),
-        };
-        format!("SELECT * FROM {} WHERE {}", self.table, where_sql)
+    pub fn order_by(mut self, s: SortOrder<C::Sort>) -> Self {
+        self.sort_expr = Some(s);
+        self
     }
 
-    pub fn build(self) -> BuiltQuery<C> {
+    fn to_sql(&self) -> String {
+        let mut idx = 0;
+
+        let where_sql = match &self.where_expr {
+            Some(e) => format!(" WHERE {}", e.to_sql(&mut idx)),
+            None => String::new(),
+        };
+
+        let sort_sql = match &self.sort_expr {
+            Some(s) => format!(" ORDER BY {}", s.to_sql()),
+            None => String::new(),
+        };
+
+        format!("{}{}", where_sql, sort_sql)
+    }
+
+    pub fn build(self) -> BuiltQuery<'a, C> {
+        // sql.push_str(&self.to_sql());
+
         BuiltQuery {
+            table: self.table,
             sql: self.to_sql(),
             where_expr: self.where_expr,
+            sort_expr: self.sort_expr,
         }
     }
 }
 
-pub struct BuiltQuery<C: QueryContext> {
+pub struct BuiltQuery<'a, C: QueryContext> {
     sql: String,
     where_expr: Option<Expression<C::Query>>,
+    sort_expr: Option<SortOrder<C::Sort>>,
+    table: &'a str,
 }
 
-impl<C> BuiltQuery<C>
+impl<'a, C> BuiltQuery<'a, C>
 where
     C: QueryContext,
     C::Query: Filterable<Entity = C::Model>,
+    C::Sort: Sortable<Entity = C::Model>,
 {
-    pub fn as_query(&self) -> sqlx::query::QueryAs<'_, Postgres, C::Model, PgArguments> {
-        let q = sqlx::query_as::<_, C::Model>(self.sql.as_str());
-        match &self.where_expr {
-            Some(e) => e.bind_into(q),
-            None => q,
+    pub fn as_query(
+        &self,
+        build_type: BuildType,
+    ) -> sqlx::query::QueryAs<'_, Postgres, C::Model, PgArguments> {
+        let mut qb = sqlx::QueryBuilder::<Postgres>::new(match build_type {
+            BuildType::Select(_) => format!("SELECT * FROM {}", self.table),
+            BuildType::Update => format!("UPDATE {}", self.table),
+            BuildType::Delete => format!("DELETE FROM {}", self.table),
+        });
+        qb.push(self.sql.as_str());
+
+        let mut q = qb.build_query_as::<C::Model>();
+
+        if let Some(w) = &self.where_expr {
+            q = w.bind_into(q);
         }
+
+        q
     }
 
     pub async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<C::Model>, sqlx::Error>
     where
         E: sqlx::Executor<'e, Database = Postgres>,
     {
-        self.as_query().fetch_all(exec).await
+        self.as_query(BuildType::Select(SelectType::Star))
+            .fetch_all(exec)
+            .await
     }
 
     pub async fn fetch_one<'e, E>(&self, exec: E) -> Result<C::Model, sqlx::Error>
     where
         E: sqlx::Executor<'e, Database = Postgres>,
     {
-        self.as_query().fetch_one(exec).await
+        self.as_query(BuildType::Select(SelectType::Star))
+            .fetch_one(exec)
+            .await
     }
 }
 
@@ -145,6 +226,19 @@ macro_rules! or {
         $crate::Expression::Or(vec![
             $( $crate::Expression::from($e) ),*
         ])
+    };
+}
+
+#[macro_export]
+macro_rules! order_by {
+    ( $( $e:expr ),+ $(,)? ) => {
+        // Use From<Vec<_>> to avoid constructing the tuple struct directly at call site
+        < $crate::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>> >
+            ::from(vec![ $( $e ),+ ])
+    };
+    () => {
+        < $crate::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>> >
+            ::from(::std::vec::Vec::new())
     };
 }
 
@@ -239,6 +333,14 @@ mod tests {
     }
 
     #[test]
+    fn sort_macros() {
+        let plain_sort = SortOrder(vec![ItemSort::ByAmountAsc, ItemSort::ByNameDesc]);
+        let short_macro_sort = order_by![ItemSort::ByAmountAsc, ItemSort::ByNameDesc];
+
+        assert_eq!(plain_sort, short_macro_sort);
+    }
+
+    #[test]
     fn repository() {
         let e = or![
             and![
@@ -262,11 +364,12 @@ mod tests {
                 ItemQuery::NameLike("Clemens".into()),
                 or![ItemQuery::PriceGt(1800.00f32), ItemQuery::DescriptionIsNull,]
             ])
+            .order_by(order_by![ItemSort::ByNameAsc, ItemSort::ByPriceDesc])
             .build();
 
         assert_eq!(
             built.sql,
-            "SELECT * FROM item WHERE (name LIKE $1 AND (price > $2 OR description IS NULL))"
+            "WHERE (name LIKE $1 AND (price > $2 OR description IS NULL)) ORDER BY name ASC, price DESC"
         )
     }
 }
