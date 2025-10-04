@@ -10,6 +10,7 @@ pub struct SqlWriter {
     qb: sqlx::QueryBuilder<'static, Postgres>,
     has_where: bool,
     has_sort: bool,
+    has_pagination: bool,
 }
 
 impl SqlWriter {
@@ -20,6 +21,7 @@ impl SqlWriter {
             qb,
             has_where: false,
             has_sort: false,
+            has_pagination: false,
         }
     }
 
@@ -43,6 +45,15 @@ impl SqlWriter {
         }
 
         self.qb.push(sort.to_sql());
+    }
+
+    fn push_pagination(&mut self, p: &Pagination) {
+        if !self.has_pagination {
+            self.qb.push(" LIMIT ");
+            self.bind(p.page_size);
+            self.qb.push(" OFFSET ");
+            self.bind(p.page * p.page_size);
+        }
     }
 }
 
@@ -135,7 +146,27 @@ impl<T: Sortable> From<Vec<T>> for SortOrder<T> {
     }
 }
 
-pub struct Page {}
+#[derive(Debug, Clone, Copy)]
+pub struct Pagination {
+    pub page: i64,
+
+    pub page_size: i64,
+}
+
+impl Pagination {
+    pub fn all() -> Self {
+        Self {
+            page: 0,
+            page_size: i32::MAX as i64,
+        }
+    }
+}
+
+impl Default for Pagination {
+    fn default() -> Self {
+        Pagination::all()
+    }
+}
 
 pub enum SelectType {
     Star,
@@ -200,6 +231,7 @@ pub struct QueryBuilder<'a, C: QueryContext> {
     table: &'a str,
     where_expr: Option<Expression<C::Query>>,
     sort_expr: Option<SortOrder<C::Sort>>,
+    pagination: Option<Pagination>,
 }
 
 impl<'a, C> QueryBuilder<'a, C>
@@ -211,6 +243,7 @@ where
             table: C::TABLE,
             where_expr: None,
             sort_expr: None,
+            pagination: None,
         }
     }
 
@@ -224,11 +257,17 @@ where
         self
     }
 
+    pub fn paginate(mut self, p: Pagination) -> Self {
+        self.pagination = Some(p);
+        self
+    }
+
     pub fn build(self) -> QueryPlan<'a, C> {
         QueryPlan {
             table: self.table,
             where_expr: self.where_expr,
             sort_expr: self.sort_expr,
+            pagination: self.pagination,
         }
     }
 }
@@ -236,6 +275,7 @@ where
 pub struct QueryPlan<'a, C: QueryContext> {
     where_expr: Option<Expression<C::Query>>,
     sort_expr: Option<SortOrder<C::Sort>>,
+    pagination: Option<Pagination>,
     table: &'a str,
 }
 
@@ -252,8 +292,13 @@ where
         if let Some(e) = &self.where_expr {
             w.push_where(e);
         }
+
         if let Some(s) = &self.sort_expr {
             w.push_sort(s);
+        }
+
+        if let Some(p) = &self.pagination {
+            w.push_pagination(p);
         }
 
         w.into_builder()
@@ -348,7 +393,7 @@ mod tests {
             &self,
             _e: Expression<ItemQuery>,
             _s: Option<SortOrder<ItemSort>>,
-            _p: Page,
+            _p: Pagination,
         ) -> Vec<Item> {
             vec![create_test_item(), create_test_item()]
         }
@@ -427,7 +472,7 @@ mod tests {
         ];
 
         let repo = ItemRepo {};
-        let items = repo.filter(e.clone(), None, Page {});
+        let items = repo.filter(e.clone(), None, Pagination::default());
         let count = repo.count(e);
 
         assert_eq!(items.len(), count);
@@ -441,11 +486,15 @@ mod tests {
                 or![ItemQuery::PriceGt(1800.00f32), ItemQuery::DescriptionIsNull,]
             ])
             .order_by(order_by![ItemSort::ByNameAsc, ItemSort::ByPriceDesc])
+            .paginate(Pagination {
+                page: 2,
+                page_size: 50,
+            })
             .build();
 
         assert_eq!(
             plan.sql(BuildType::Raw).trim_start(),
-            "WHERE (name LIKE $1 AND (price > $2 OR description IS NULL)) ORDER BY name ASC, price DESC"
+            "WHERE (name LIKE $1 AND (price > $2 OR description IS NULL)) ORDER BY name ASC, price DESC LIMIT $3 OFFSET $4"
         )
     }
 }
