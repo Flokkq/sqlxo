@@ -1,5 +1,7 @@
 #![feature(trait_alias)]
 
+use sqlx::{prelude::Type, Postgres};
+
 pub trait QueryModel =
     Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + 'static;
 
@@ -10,12 +12,16 @@ pub trait QuerySort = Sortable + Send + Clone + Sync;
 pub trait Filterable {
     type Entity: QueryModel;
 
-    fn filter_clause(&self, idx: &mut usize) -> String;
+    fn write<W: SqlWrite>(&self, w: &mut W);
+}
 
-    fn bind<'q>(
-        self,
-        q: sqlx::query::QueryAs<'q, sqlx::Postgres, Self::Entity, sqlx::postgres::PgArguments>,
-    ) -> sqlx::query::QueryAs<'q, sqlx::Postgres, Self::Entity, sqlx::postgres::PgArguments>;
+pub trait SqlWrite {
+    fn push(&mut self, s: &str);
+
+    fn bind<T>(&mut self, value: T)
+    where
+        T: sqlx::Encode<'static, Postgres> + Send + 'static,
+        T: Type<Postgres>;
 }
 
 pub trait QueryContext {

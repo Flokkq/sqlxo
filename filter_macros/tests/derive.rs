@@ -3,9 +3,44 @@ use crate::ItemSort::*;
 use filter_macros::Query;
 use filter_traits::Filterable;
 use filter_traits::QueryContext;
+use filter_traits::Sortable;
+use filter_traits::SqlWrite;
 use sqlx::Execute;
 use sqlx::FromRow;
+use sqlx::{postgres::PgArguments, Arguments};
 use uuid::Uuid;
+
+#[derive(Default, Debug)]
+pub struct DummyWriter {
+    sql: String,
+    binds: usize,
+}
+
+impl SqlWrite for DummyWriter {
+    fn push(&mut self, s: &str) {
+        self.sql.push_str(&s);
+    }
+
+    fn bind<T>(&mut self, _value: T)
+    where
+        T: sqlx::Encode<'static, sqlx::Postgres> + Send + 'static,
+        T: sqlx::Type<sqlx::Postgres>,
+    {
+        self.binds += 1;
+
+        use std::fmt::Write as _;
+        let _ = write!(&mut self.sql, "${}", self.binds);
+    }
+}
+
+fn assert_write(q: ItemQuery, expected_sql: &str, expcted_binds: usize) {
+    let mut w = DummyWriter::default();
+
+    q.write(&mut w);
+
+    assert_eq!(w.sql, expected_sql, "sql missmatch");
+    assert_eq!(w.binds, expcted_binds, "bind count missmatch");
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, FromRow, Query)]
@@ -92,104 +127,90 @@ fn sort_enum_variants_exist() {
 }
 
 #[test]
-fn query_enum_generates_expected_sql() {
-    let mut idx = 0;
-    assert_eq!(
-        ItemQuery::NameEq("foo".into()).filter_clause(&mut idx),
-        "name = $1"
-    );
-    assert_eq!(idx, 1);
-
-    assert_eq!(
-        ItemQuery::PriceGt(42.0).filter_clause(&mut idx),
-        "price > $2"
-    );
-    assert_eq!(idx, 2);
-
-    assert_eq!(
-        ItemQuery::ActiveIsTrue.filter_clause(&mut idx),
-        "active = TRUE"
-    );
-    assert_eq!(idx, 2, "no new bind parameter for pure boolean expr");
+fn string_ops_write_expected_sql() {
+    assert_write(NameEq("foo".into()), "name = $1", 1);
+    assert_write(NameNeq("bar".into()), "name <> $1", 1);
+    assert_write(NameLike("%x%".into()), "name LIKE $1", 1);
+    assert_write(NameNotLike("%x%".into()), "name NOT LIKE $1", 1);
+    assert_write(DescriptionIsNull, "description IS NULL", 0);
+    assert_write(DescriptionIsNotNull, "description IS NOT NULL", 0);
 }
 
 #[test]
-fn query_enum_full_query_matches_handwritten() {
-    let mut idx = 0;
-    let clause = ItemQuery::NameEq("foo".into()).filter_clause(&mut idx);
-    let generated = format!("SELECT * FROM item WHERE ({clause})");
-
-    let handwritten = "SELECT * FROM item WHERE (name = $1)";
-
-    assert_eq!(generated, handwritten);
-}
-
-use sqlx::{postgres::PgArguments, Arguments};
-
-#[test]
-fn bind_adds_expected_number_of_args_for_string_eq() {
-    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE name = $1");
-    let q = ItemQuery::NameEq("foo".into()).bind(q);
-
-    let mut q = q;
-    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
-    assert_eq!(args.len(), 1, "NameEq should bind 1 argument");
+fn bool_ops_write_expected_sql() {
+    assert_write(ActiveIsTrue, "active = TRUE", 0);
+    assert_write(ActiveIsFalse, "active = FALSE", 0);
 }
 
 #[test]
-fn bind_adds_expected_number_of_args_for_between() {
-    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE price BETWEEN $1 AND $2");
-    let q = ItemQuery::PriceBetween(10.0_f32, 99.0_f32).bind(q);
-
-    let mut q = q;
-    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
-    assert_eq!(args.len(), 2, "PriceBetween should bind 2 arguments");
-}
-
-#[test]
-fn bind_for_bool_ops_binds_nothing() {
-    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE active = TRUE");
-    let q = ItemQuery::ActiveIsTrue.bind(q);
-
-    let mut q = q;
-    let args: PgArguments = q.take_arguments().unwrap_or_default().unwrap();
-    assert_eq!(args.len(), 0, "ActiveIsTrue should bind no arguments");
-}
-
-#[test]
-fn bind_chain_preserves_order_and_sql() {
-    let sql = "SELECT * FROM item WHERE name = $1 AND price > $2 AND active = TRUE";
-    let q = sqlx::query_as::<_, Item>(sql);
-
-    let q = ItemQuery::NameEq("foo".into()).bind(q);
-    let q = ItemQuery::PriceGt(42.0_f32).bind(q);
-    let q = ItemQuery::ActiveIsTrue.bind(q);
-
-    assert_eq!(q.sql(), sql);
-
-    let mut q = q;
-    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
-    assert_eq!(
-        args.len(),
+fn numeric_ops_write_expected_sql_and_binds() {
+    assert_write(PriceEq(1.5), "price = $1", 1);
+    assert_write(PriceNeq(1.5), "price <> $1", 1);
+    assert_write(PriceGt(2.0), "price > $1", 1);
+    assert_write(PriceGte(2.0), "price >= $1", 1);
+    assert_write(PriceLt(2.0), "price < $1", 1);
+    assert_write(PriceLte(2.0), "price <= $1", 1);
+    assert_write(PriceBetween(10.0, 99.0), "price BETWEEN $1 AND $2", 2);
+    assert_write(
+        PriceNotBetween(10.0, 99.0),
+        "price NOT BETWEEN $1 AND $2",
         2,
-        "two arguments should be bound for NameEq and PriceGt"
     );
+
+    assert_write(AmountGt(5), "amount > $1", 1);
 }
 
 #[test]
-fn bind_for_uuid_and_datetime() {
-    let uid = Uuid::nil();
-    let now = chrono::Utc::now();
+fn uuid_ops_write_expected_sql() {
+    let uid = Uuid::default();
+    let mut w = DummyWriter::default();
 
-    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE id = $1");
-    let q = ItemQuery::IdEq(uid).bind(q);
-    let mut q = q;
-    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
-    assert_eq!(args.len(), 1, "IdEq should bind 1 argument");
+    IdEq(uid).write(&mut w);
+    assert_eq!(w.sql, "id = $1");
+    assert_eq!(w.binds, 1);
 
-    let q = sqlx::query_as::<_, Item>("SELECT * FROM item WHERE due_date BETWEEN $1 AND $2");
-    let q = ItemQuery::DueDateBetween(now, now).bind(q);
-    let mut q = q;
-    let args: PgArguments = q.take_arguments().expect("arguments present").unwrap();
-    assert_eq!(args.len(), 2, "DueDateBetween should bind 2 arguments");
+    let mut w = DummyWriter::default();
+    IdNeq(uid).write(&mut w);
+    assert_eq!(w.sql, "id <> $1");
+    assert_eq!(w.binds, 1);
+
+    assert_write(IdIsNull, "id IS NULL", 0);
+    assert_write(IdIsNotNull, "id IS NOT NULL", 0);
+}
+
+#[test]
+fn datetime_ops_write_expected_sql() {
+    use sqlx::types::chrono::{DateTime, Utc};
+    let now: DateTime<Utc> = Utc::now();
+
+    let mut w = DummyWriter::default();
+    DueDateOn(now).write(&mut w);
+    assert_eq!(w.sql, "due_date = $1");
+    assert_eq!(w.binds, 1);
+
+    let mut w = DummyWriter::default();
+    DueDateBetween(now, now).write(&mut w);
+    assert_eq!(w.sql, "due_date BETWEEN $1 AND $2");
+    assert_eq!(w.binds, 2);
+
+    assert_write(DueDateIsNull, "due_date IS NULL", 0);
+    assert_write(DueDateIsNotNull, "due_date IS NOT NULL", 0);
+}
+
+#[test]
+fn sort_variants_emit_expected_clauses() {
+    assert_eq!(ByNameAsc.sort_clause(), "name ASC");
+    assert_eq!(ByNameDesc.sort_clause(), "name DESC");
+
+    assert_eq!(ByPriceAsc.sort_clause(), "price ASC");
+    assert_eq!(ByPriceDesc.sort_clause(), "price DESC");
+
+    assert_eq!(ByAmountAsc.sort_clause(), "amount ASC");
+    assert_eq!(ByAmountDesc.sort_clause(), "amount DESC");
+
+    assert_eq!(ByActiveAsc.sort_clause(), "active ASC");
+    assert_eq!(ByActiveDesc.sort_clause(), "active DESC");
+
+    assert_eq!(ByDueDateAsc.sort_clause(), "due_date ASC");
+    assert_eq!(ByDueDateDesc.sort_clause(), "due_date DESC");
 }

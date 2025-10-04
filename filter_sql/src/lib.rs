@@ -1,7 +1,64 @@
-use filter_traits::{Filterable, QueryContext, Sortable};
-use sqlx::{postgres::PgArguments, Postgres};
+use core::fmt;
+use std::fmt::{Display, Formatter};
+
+use filter_traits::{Filterable, QueryContext, Sortable, SqlWrite};
+use sqlx::{Postgres, Type};
 
 pub mod repo;
+
+pub struct SqlWriter {
+    qb: sqlx::QueryBuilder<'static, Postgres>,
+    has_where: bool,
+    has_sort: bool,
+}
+
+impl SqlWriter {
+    pub fn new(head: SqlHead) -> Self {
+        let qb = sqlx::QueryBuilder::<Postgres>::new(head.to_string());
+
+        Self {
+            qb,
+            has_where: false,
+            has_sort: false,
+        }
+    }
+
+    pub fn into_builder(self) -> sqlx::QueryBuilder<'static, Postgres> {
+        self.qb
+    }
+
+    pub fn push_where<F: Filterable>(&mut self, expr: &Expression<F>) {
+        if !self.has_where {
+            self.qb.push(" WHERE ");
+            self.has_where = true;
+        }
+
+        expr.write(self);
+    }
+
+    pub fn push_sort<S: Sortable>(&mut self, sort: &SortOrder<S>) {
+        if !self.has_sort {
+            self.qb.push(" ORDER BY ");
+            self.has_sort = true;
+        }
+
+        self.qb.push(sort.to_sql());
+    }
+}
+
+impl SqlWrite for SqlWriter {
+    fn push(&mut self, s: &str) {
+        self.qb.push(s);
+    }
+
+    fn bind<T>(&mut self, value: T)
+    where
+        T: sqlx::Encode<'static, Postgres> + Send + 'static,
+        T: Type<Postgres>,
+    {
+        self.qb.push_bind(value);
+    }
+}
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expression<T: Filterable> {
@@ -21,36 +78,30 @@ where
 }
 
 impl<T: Filterable> Expression<T> {
-    pub fn to_sql(&self, idx: &mut usize) -> String {
+    pub fn write(&self, w: &mut SqlWriter) {
         match self {
-            Expression::Leaf(q) => q.filter_clause(idx),
+            Expression::Leaf(q) => q.write(w),
             Expression::And(xs) => {
-                let parts: Vec<String> = xs.iter().map(|x| x.to_sql(idx)).collect();
-                format!("({})", parts.join(" AND "))
+                w.push("(");
+                for (i, x) in xs.iter().enumerate() {
+                    if i > 0 {
+                        w.push(" AND ");
+                    }
+
+                    x.write(w);
+                }
+                w.push(")");
             }
             Expression::Or(xs) => {
-                let parts: Vec<String> = xs.iter().map(|x| x.to_sql(idx)).collect();
-                format!("({})", parts.join(" OR "))
-            }
-        }
-    }
-}
+                w.push("(");
+                for (i, x) in xs.iter().enumerate() {
+                    if i > 0 {
+                        w.push(" OR ");
+                    }
 
-impl<T> Expression<T>
-where
-    T: Filterable + Clone,
-{
-    pub fn bind_into<'q>(
-        &self,
-        mut q: sqlx::query::QueryAs<'q, sqlx::Postgres, T::Entity, sqlx::postgres::PgArguments>,
-    ) -> sqlx::query::QueryAs<'q, sqlx::Postgres, T::Entity, sqlx::postgres::PgArguments> {
-        match self {
-            Self::Leaf(f) => f.clone().bind(q),
-            Self::And(xs) | Self::Or(xs) => {
-                for x in xs {
-                    q = x.bind_into(q);
+                    x.write(w);
                 }
-                q
+                w.push(")");
             }
         }
     }
@@ -61,7 +112,7 @@ pub struct SortOrder<T: Sortable>(Vec<T>);
 
 impl<T> SortOrder<T>
 where
-    T: Sortable + Clone,
+    T: Sortable,
 {
     pub fn to_sql(&self) -> String {
         let mut out = String::new();
@@ -97,10 +148,52 @@ pub enum AggregationType {
     Count,
     Avg,
 }
+
 pub enum BuildType {
     Select(SelectType),
     Update,
     Delete,
+    #[cfg(test)]
+    Raw,
+}
+
+pub struct SqlHead<'a> {
+    build: BuildType,
+    table: &'a str,
+}
+
+impl<'a> SqlHead<'a> {
+    pub fn new(table: &'a str, build: BuildType) -> Self {
+        Self { build, table }
+    }
+}
+
+impl Display for AggregationType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            AggregationType::Max => f.write_str("MAX"),
+            AggregationType::Min => f.write_str("MIN"),
+            AggregationType::Count => f.write_str("COUNT"),
+            AggregationType::Avg => f.write_str("AVG"),
+        }
+    }
+}
+
+impl<'a> Display for SqlHead<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.build {
+            BuildType::Select(SelectType::Star) => {
+                write!(f, "SELECT * FROM {}", self.table)
+            }
+            BuildType::Select(SelectType::Aggregation(agg)) => {
+                write!(f, "SELECT {}(*) FROM {}", agg, self.table)
+            }
+            BuildType::Update => write!(f, "UPDATE {}", self.table),
+            BuildType::Delete => write!(f, "DELETE FROM {}", self.table),
+            #[cfg(test)]
+            BuildType::Raw => write!(f, ""),
+        }
+    }
 }
 
 pub struct QueryBuilder<'a, C: QueryContext> {
@@ -131,72 +224,47 @@ where
         self
     }
 
-    fn to_sql(&self) -> String {
-        let mut idx = 0;
-
-        let where_sql = match &self.where_expr {
-            Some(e) => format!(" WHERE {}", e.to_sql(&mut idx)),
-            None => String::new(),
-        };
-
-        let sort_sql = match &self.sort_expr {
-            Some(s) => format!(" ORDER BY {}", s.to_sql()),
-            None => String::new(),
-        };
-
-        format!("{}{}", where_sql, sort_sql)
-    }
-
-    pub fn build(self) -> BuiltQuery<'a, C> {
-        // sql.push_str(&self.to_sql());
-
-        BuiltQuery {
+    pub fn build(self) -> QueryPlan<'a, C> {
+        QueryPlan {
             table: self.table,
-            sql: self.to_sql(),
             where_expr: self.where_expr,
             sort_expr: self.sort_expr,
         }
     }
 }
 
-pub struct BuiltQuery<'a, C: QueryContext> {
-    sql: String,
+pub struct QueryPlan<'a, C: QueryContext> {
     where_expr: Option<Expression<C::Query>>,
     sort_expr: Option<SortOrder<C::Sort>>,
     table: &'a str,
 }
 
-impl<'a, C> BuiltQuery<'a, C>
+impl<'a, C> QueryPlan<'a, C>
 where
     C: QueryContext,
     C::Query: Filterable<Entity = C::Model>,
     C::Sort: Sortable<Entity = C::Model>,
 {
-    pub fn as_query(
-        &self,
-        build_type: BuildType,
-    ) -> sqlx::query::QueryAs<'_, Postgres, C::Model, PgArguments> {
-        let mut qb = sqlx::QueryBuilder::<Postgres>::new(match build_type {
-            BuildType::Select(_) => format!("SELECT * FROM {}", self.table),
-            BuildType::Update => format!("UPDATE {}", self.table),
-            BuildType::Delete => format!("DELETE FROM {}", self.table),
-        });
-        qb.push(self.sql.as_str());
+    fn to_query_builder(&self, build_type: BuildType) -> sqlx::QueryBuilder<'static, Postgres> {
+        let head = SqlHead::new(self.table, build_type);
+        let mut w = SqlWriter::new(head);
 
-        let mut q = qb.build_query_as::<C::Model>();
-
-        if let Some(w) = &self.where_expr {
-            q = w.bind_into(q);
+        if let Some(e) = &self.where_expr {
+            w.push_where(e);
+        }
+        if let Some(s) = &self.sort_expr {
+            w.push_sort(s);
         }
 
-        q
+        w.into_builder()
     }
 
     pub async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<C::Model>, sqlx::Error>
     where
         E: sqlx::Executor<'e, Database = Postgres>,
     {
-        self.as_query(BuildType::Select(SelectType::Star))
+        self.to_query_builder(BuildType::Select(SelectType::Star))
+            .build_query_as::<C::Model>()
             .fetch_all(exec)
             .await
     }
@@ -205,9 +273,17 @@ where
     where
         E: sqlx::Executor<'e, Database = Postgres>,
     {
-        self.as_query(BuildType::Select(SelectType::Star))
+        self.to_query_builder(BuildType::Select(SelectType::Star))
+            .build_query_as::<C::Model>()
             .fetch_one(exec)
             .await
+    }
+
+    #[cfg(test)]
+    pub fn sql(&self, build: BuildType) -> String {
+        use sqlx::Execute;
+
+        self.to_query_builder(build).build().sql().to_string()
     }
 }
 
@@ -359,7 +435,7 @@ mod tests {
 
     #[test]
     fn query_builder() {
-        let built: BuiltQuery<Item> = QueryBuilder::from_ctx()
+        let plan: QueryPlan<Item> = QueryBuilder::from_ctx()
             .r#where(and![
                 ItemQuery::NameLike("Clemens".into()),
                 or![ItemQuery::PriceGt(1800.00f32), ItemQuery::DescriptionIsNull,]
@@ -368,7 +444,7 @@ mod tests {
             .build();
 
         assert_eq!(
-            built.sql,
+            plan.sql(BuildType::Raw).trim_start(),
             "WHERE (name LIKE $1 AND (price > $2 OR description IS NULL)) ORDER BY name ASC, price DESC"
         )
     }
