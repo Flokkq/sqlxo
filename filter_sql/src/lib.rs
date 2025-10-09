@@ -436,6 +436,21 @@ mod tests {
         description: String,
     }
 
+    pub trait NormalizeString {
+        fn normalize(&self) -> String;
+    }
+
+    impl NormalizeString for String {
+        fn normalize(&self) -> String {
+            self.split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+    }
+
+    impl NormalizeString for &str {
+        fn normalize(&self) -> String {
+            self.split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+    }
 
     struct ItemRepo {}
     impl ReadRepository<Item, ItemQuery, ItemSort> for ItemRepo {
@@ -549,7 +564,12 @@ mod tests {
 
         assert_eq!(
             plan.sql(BuildType::Raw).trim_start(),
-            "LEFT JOIN material ON \"item\".\"material_id\" = \"material\".\"id\" WHERE (name LIKE $1 AND (price > $2 OR description IS NULL)) ORDER BY name ASC, price DESC LIMIT $3 OFFSET $4"
+            r#"
+                LEFT JOIN material ON "item"."material_id" = "material"."id"
+                WHERE (name LIKE $1 AND (price > $2 OR description IS NULL))
+                ORDER BY name ASC, price DESC
+                LIMIT $3 OFFSET $4
+            "#.normalize()
         )
     }
 }
