@@ -1,13 +1,14 @@
 use core::fmt;
 use std::fmt::{Display, Formatter};
 
-use filter_traits::{Filterable, QueryContext, Sortable, SqlWrite};
+use filter_traits::{Filterable, QueryContext, Sortable, SqlJoin, SqlWrite};
 use sqlx::{Postgres, Type};
 
 pub mod repo;
 
 pub struct SqlWriter {
     qb: sqlx::QueryBuilder<'static, Postgres>,
+    has_join: bool,
     has_where: bool,
     has_sort: bool,
     has_pagination: bool,
@@ -19,6 +20,7 @@ impl SqlWriter {
 
         Self {
             qb,
+            has_join: false,
             has_where: false,
             has_sort: false,
             has_pagination: false,
@@ -29,31 +31,45 @@ impl SqlWriter {
         self.qb
     }
 
-    pub fn push_where<F: Filterable>(&mut self, expr: &Expression<F>) {
-        if !self.has_where {
-            self.qb.push(" WHERE ");
-            self.has_where = true;
+    pub fn push_joins<J: SqlJoin>(&mut self, joins: &Vec<J>) {
+        if self.has_join {
+            return;
         }
 
+        for j in joins {
+            self.qb.push(j.to_sql());
+        }
+    }
+
+    pub fn push_where<F: Filterable>(&mut self, expr: &Expression<F>) {
+        if self.has_where {
+            return;
+        }
+
+        self.qb.push(" WHERE ");
+        self.has_where = true;
         expr.write(self);
     }
 
     pub fn push_sort<S: Sortable>(&mut self, sort: &SortOrder<S>) {
-        if !self.has_sort {
-            self.qb.push(" ORDER BY ");
-            self.has_sort = true;
+        if self.has_sort {
+            return;
         }
 
+        self.qb.push(" ORDER BY ");
+        self.has_sort = true;
         self.qb.push(sort.to_sql());
     }
 
     fn push_pagination(&mut self, p: &Pagination) {
-        if !self.has_pagination {
-            self.qb.push(" LIMIT ");
-            self.bind(p.page_size);
-            self.qb.push(" OFFSET ");
-            self.bind(p.page * p.page_size);
+        if self.has_pagination {
+            return;
         }
+
+        self.qb.push(" LIMIT ");
+        self.bind(p.page_size);
+        self.qb.push(" OFFSET ");
+        self.bind(p.page * p.page_size);
     }
 }
 
@@ -229,6 +245,7 @@ impl<'a> Display for SqlHead<'a> {
 
 pub struct QueryBuilder<'a, C: QueryContext> {
     table: &'a str,
+    joins: Option<Vec<C::Join>>,
     where_expr: Option<Expression<C::Query>>,
     sort_expr: Option<SortOrder<C::Sort>>,
     pagination: Option<Pagination>,
@@ -241,10 +258,20 @@ where
     pub fn from_ctx() -> Self {
         Self {
             table: C::TABLE,
+            joins: None,
             where_expr: None,
             sort_expr: None,
             pagination: None,
         }
+    }
+
+    pub fn join(mut self, j: C::Join) -> Self {
+        if self.joins.is_none() {
+            self.joins = Some(vec![]);
+        }
+
+        self.joins.as_mut().unwrap().push(j);
+        self
     }
 
     pub fn r#where(mut self, e: Expression<C::Query>) -> Self {
@@ -265,6 +292,7 @@ where
     pub fn build(self) -> QueryPlan<'a, C> {
         QueryPlan {
             table: self.table,
+            joins: self.joins,
             where_expr: self.where_expr,
             sort_expr: self.sort_expr,
             pagination: self.pagination,
@@ -273,6 +301,7 @@ where
 }
 
 pub struct QueryPlan<'a, C: QueryContext> {
+    joins: Option<Vec<C::Join>>,
     where_expr: Option<Expression<C::Query>>,
     sort_expr: Option<SortOrder<C::Sort>>,
     pagination: Option<Pagination>,
@@ -288,6 +317,10 @@ where
     fn to_query_builder(&self, build_type: BuildType) -> sqlx::QueryBuilder<'static, Postgres> {
         let head = SqlHead::new(self.table, build_type);
         let mut w = SqlWriter::new(head);
+
+        if let Some(js) = &self.joins {
+            w.push_joins(js);
+        }
 
         if let Some(e) = &self.where_expr {
             w.push_where(e);
@@ -366,6 +399,7 @@ macro_rules! order_by {
 #[cfg(test)]
 mod tests {
     use filter_macros::Query;
+    use filter_traits::JoinKind;
     use sqlx::types::chrono;
     use sqlx::FromRow;
     use uuid::Uuid;
@@ -378,6 +412,7 @@ mod tests {
     #[allow(dead_code)]
     #[derive(Debug, FromRow, Clone, Query)]
     pub struct Item {
+        #[primary_key]
         id: Uuid,
         name: String,
         description: String,
@@ -385,7 +420,22 @@ mod tests {
         amount: i32,
         active: bool,
         due_date: chrono::DateTime<chrono::Utc>,
+
+        #[foreign_key(to = "material.id")]
+        material_id: Uuid,
     }
+
+    #[allow(dead_code)]
+    #[derive(Debug, FromRow, Clone, Query)]
+    pub struct Material {
+        #[primary_key]
+        id: Uuid,
+
+        name: String,
+        long_name: String,
+        description: String,
+    }
+
 
     struct ItemRepo {}
     impl ReadRepository<Item, ItemQuery, ItemSort> for ItemRepo {
@@ -395,11 +445,14 @@ mod tests {
             _s: Option<SortOrder<ItemSort>>,
             _p: Pagination,
         ) -> Vec<Item> {
-            vec![create_test_item(), create_test_item()]
+            vec![
+                create_test_item(&Uuid::new_v4()),
+                create_test_item(&Uuid::new_v4()),
+            ]
         }
 
         fn query(&self, _e: Expression<ItemQuery>) -> Item {
-            create_test_item()
+            create_test_item(&Uuid::new_v4())
         }
 
         fn count(&self, _e: Expression<ItemQuery>) -> usize {
@@ -411,7 +464,7 @@ mod tests {
         }
     }
 
-    fn create_test_item() -> Item {
+    fn create_test_item(material_id: &Uuid) -> Item {
         Item {
             id: Uuid::new_v4(),
             name: "Test Item".to_string(),
@@ -420,6 +473,7 @@ mod tests {
             amount: 10,
             active: true,
             due_date: chrono::Utc::now(),
+            material_id: material_id.clone(),
         }
     }
 
@@ -481,6 +535,7 @@ mod tests {
     #[test]
     fn query_builder() {
         let plan: QueryPlan<Item> = QueryBuilder::from_ctx()
+            .join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
             .r#where(and![
                 ItemQuery::NameLike("Clemens".into()),
                 or![ItemQuery::PriceGt(1800.00f32), ItemQuery::DescriptionIsNull,]
@@ -494,7 +549,7 @@ mod tests {
 
         assert_eq!(
             plan.sql(BuildType::Raw).trim_start(),
-            "WHERE (name LIKE $1 AND (price > $2 OR description IS NULL)) ORDER BY name ASC, price DESC LIMIT $3 OFFSET $4"
+            "LEFT JOIN material ON \"item\".\"material_id\" = \"material\".\"id\" WHERE (name LIKE $1 AND (price > $2 OR description IS NULL)) ORDER BY name ASC, price DESC LIMIT $3 OFFSET $4"
         )
     }
 }

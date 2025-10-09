@@ -30,12 +30,25 @@ pub trait QueryContext {
     type Model: QueryModel;
     type Query: QueryQuery;
     type Sort: QuerySort;
+    type Join: SqlJoin;
 }
 
 pub trait Sortable {
     type Entity: QueryModel;
 
     fn sort_clause(&self) -> String;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinKind {
+    Left,
+    Inner,
+}
+
+pub trait SqlJoin {
+    fn to_sql(&self) -> String;
+
+    fn kind(&self) -> JoinKind;
 }
 
 pub trait Model {}
