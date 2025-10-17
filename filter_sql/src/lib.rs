@@ -574,18 +574,19 @@ mod tests {
                 WHERE (name LIKE $1 AND (price > $2 OR description IS NULL))
                 ORDER BY name ASC, price DESC
                 LIMIT $3 OFFSET $4
-            "#.normalize()
+            "#
+            .normalize()
         )
     }
 
     #[derive(Clone)]
     pub struct DatabaseSettings {
-        pub username:      String,
-        pub password:      String,
-        pub port:          u16,
-        pub host:          String,
+        pub username: String,
+        pub password: String,
+        pub port: u16,
+        pub host: String,
         pub database_name: String,
-        pub require_ssl:   bool,
+        pub require_ssl: bool,
     }
 
     impl DatabaseSettings {
@@ -611,36 +612,35 @@ mod tests {
         }
     }
 
-pub async fn get_connection_pool() -> PgPool {
-    let mut cfg = DatabaseSettings {
-        username: "postgres".into(),
-        password: "password".into(),
-        port: 2345,
-        host: "localhost".into(),
-        database_name: "postgres".into(),
-        require_ssl: false,
-    };
+    pub async fn get_connection_pool() -> PgPool {
+        let mut cfg = DatabaseSettings {
+            username: "postgres".into(),
+            password: "password".into(),
+            port: 2345,
+            host: "localhost".into(),
+            database_name: "postgres".into(),
+            require_ssl: false,
+        };
 
-    let server_pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect_with(cfg.clone().without_db())
-        .await
-        .expect("connect server");
+        let server_pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(cfg.clone().without_db())
+            .await
+            .expect("connect server");
 
-    let db_name = Uuid::new_v4().to_string();
+        let db_name = Uuid::new_v4().to_string();
 
-    sqlx::query(&format!(r#"CREATE DATABASE "{}""#, db_name))
-        .execute(&server_pool)
-        .await
-        .expect("create db");
+        sqlx::query(&format!(r#"CREATE DATABASE "{}""#, db_name))
+            .execute(&server_pool)
+            .await
+            .expect("create db");
 
-
-    cfg.database_name = db_name.clone();
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect_with(cfg.with_db())
-        .await
-        .expect("connect new db");
+        cfg.database_name = db_name.clone();
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect_with(cfg.with_db())
+            .await
+            .expect("connect new db");
 
         migrate!("../migrations").run(&pool).await.unwrap();
 
@@ -650,13 +650,6 @@ pub async fn get_connection_pool() -> PgPool {
     #[tokio::test]
     async fn query_returns_expected_values() {
         let pool = get_connection_pool().await;
-
-        // let material = Material {
-        //     id: Uuid::new_v4(),
-        //     name: "material".into(),
-        //     long_name: "matterial".into(),
-        //     description: "matze".into(),
-        // };
 
         let item = Item {
             id: Uuid::new_v4(),
@@ -689,8 +682,7 @@ pub async fn get_connection_pool() -> PgPool {
         .await
         .unwrap();
 
-        
-        let plan: QueryPlan<Item> = QueryBuilder::from_ctx()
+        let items: Vec<Item> = QueryBuilder::<Item>::from_ctx()
             .r#where(and![
                 ItemQuery::NameEq("test".into()),
                 or![ItemQuery::PriceLt(10.00f32), ItemQuery::AmountEq(2)]
@@ -700,10 +692,11 @@ pub async fn get_connection_pool() -> PgPool {
                 page: 0,
                 page_size: 50,
             })
-            .build();
+            .build()
+            .fetch_all(&pool)
+            .await
+            .unwrap();
 
-        let i = plan.fetch_all(&pool).await.unwrap();
-
-        assert_eq!(i.len(), 1);
+        assert_eq!(items.len(), 1);
     }
 }
