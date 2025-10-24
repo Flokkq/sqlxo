@@ -357,6 +357,16 @@ where
             .await
     }
 
+    pub async fn fetch_optional<'e, E>(&self, exec: E) -> Result<Option<C::Model>, sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = Postgres>,
+    {
+        self.to_query_builder(BuildType::Select(SelectType::Star))
+            .build_query_as::<C::Model>()
+            .fetch_optional(exec)
+            .await
+    }
+
     #[cfg(test)]
     pub fn sql(&self, build: BuildType) -> String {
         use sqlx::Execute;
@@ -398,6 +408,8 @@ macro_rules! order_by {
 
 #[cfg(test)]
 mod tests {
+    use claims::assert_some;
+    use claims::assert_some_eq;
     use filter_macros::Query;
     use filter_macros::WebQuery;
     use filter_traits::JoinKind;
@@ -420,7 +432,7 @@ mod tests {
     use crate::*;
 
     #[allow(dead_code)]
-    #[derive(Debug, FromRow, Clone, Query)]
+    #[derive(Debug, FromRow, Clone, Query, PartialEq)]
     pub struct Item {
         #[primary_key]
         id: Uuid,
@@ -688,8 +700,8 @@ mod tests {
             "#,
         )
         .bind(item.id)
-        .bind(item.name)
-        .bind(item.description)
+        .bind(&item.name)
+        .bind(&item.description)
         .bind(item.price)
         .bind(item.amount)
         .bind(item.active)
@@ -699,7 +711,7 @@ mod tests {
         .await
         .unwrap();
 
-        let items: Vec<Item> = QueryBuilder::<Item>::from_ctx()
+        let maybe: Option<Item> = QueryBuilder::<Item>::from_ctx()
             .r#where(and![
                 ItemQuery::NameEq("test".into()),
                 or![ItemQuery::PriceLt(10.00f32), ItemQuery::AmountEq(2)]
@@ -710,11 +722,11 @@ mod tests {
                 page_size: 50,
             })
             .build()
-            .fetch_all(&pool)
+            .fetch_optional(&pool)
             .await
             .unwrap();
 
-        assert_eq!(items.len(), 1);
+        assert_some_eq!(maybe, item);
     }
 
     #[test]
