@@ -9,12 +9,15 @@ resolver = "2"
 members = [
   "filter_traits",
   "filter_macros",
-  "filter_sql"
+  "filter_sql",
+  "examples"
 ]
 
 [workspace.dependencies]
 filter_traits = { path = "filter_traits" }
 filter_macros = { path = "filter_macros" }
+filter_sql = { path = "filter_sql" }
+chrono = { version = "0.4.42", features = ["serde"] }
 
 anyhow = "1.0"
 validator = { version = "0.19.0", features = ["derive"] }

@@ -399,7 +399,12 @@ macro_rules! order_by {
 #[cfg(test)]
 mod tests {
     use filter_macros::Query;
+    use filter_macros::WebQuery;
     use filter_traits::JoinKind;
+    use serde::Deserialize;
+    use serde::Serialize;
+    use serde_json::json;
+    use serde_json::Value;
     use sqlx::migrate;
     use sqlx::postgres::PgConnectOptions;
     use sqlx::postgres::PgPoolOptions;
@@ -428,6 +433,18 @@ mod tests {
 
         #[foreign_key(to = "material.id")]
         material_id: Option<Uuid>,
+    }
+
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]
+    pub struct ItemDto {
+        id: Uuid,
+        name: String,
+        description: String,
+        price: f32,
+        amount: i32,
+        active: bool,
+        due_date: chrono::DateTime<chrono::Utc>,
     }
 
     #[allow(dead_code)]
@@ -698,5 +715,30 @@ mod tests {
             .unwrap();
 
         assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn deserialize_itemdto_filter_json() {
+        let json: Value = json!({
+            "filter": {
+                "and": [
+                    { "name": { "like": "%Sternlampe%" } },
+                    { "or": [
+                        { "price": { "gt": 18.00 } },
+                        { "description": { "neq": "von Hohlweg" } }
+                    ]}
+                ]
+            },
+            "sort": [
+                { "name": "asc" },
+                { "description": "desc" }
+            ],
+            "page": { "pageSize": 10, "pageNo": 1 }
+        });
+
+        let f: ItemDtoFilter = serde_json::from_value(json).expect("valid ItemDtoFilter");
+
+        assert_eq!(f.page.page_size, 10);
+        assert_eq!(f.page.page_no, 1);
     }
 }
