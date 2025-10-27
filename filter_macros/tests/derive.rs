@@ -5,9 +5,7 @@ use filter_traits::Filterable;
 use filter_traits::QueryContext;
 use filter_traits::Sortable;
 use filter_traits::SqlWrite;
-use sqlx::Execute;
 use sqlx::FromRow;
-use sqlx::{postgres::PgArguments, Arguments};
 use uuid::Uuid;
 
 #[derive(Default, Debug)]

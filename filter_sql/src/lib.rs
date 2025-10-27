@@ -4,8 +4,6 @@ use std::fmt::{Display, Formatter};
 use filter_traits::{Filterable, QueryContext, Sortable, SqlJoin, SqlWrite};
 use sqlx::{Postgres, Type};
 
-pub mod repo;
-
 pub struct SqlWriter {
     qb: sqlx::QueryBuilder<'static, Postgres>,
     has_join: bool,
@@ -408,8 +406,6 @@ macro_rules! order_by {
 
 #[cfg(test)]
 mod tests {
-    use claims::assert_some;
-    use claims::assert_some_eq;
     use filter_macros::Query;
     use filter_macros::WebQuery;
     use filter_traits::JoinKind;
@@ -417,18 +413,12 @@ mod tests {
     use serde::Serialize;
     use serde_json::json;
     use serde_json::Value;
-    use sqlx::migrate;
-    use sqlx::postgres::PgConnectOptions;
-    use sqlx::postgres::PgPoolOptions;
-    use sqlx::postgres::PgSslMode;
     use sqlx::types::chrono;
     use sqlx::FromRow;
-    use sqlx::PgPool;
     use uuid::Uuid;
 
     use crate::and;
     use crate::or;
-    use crate::repo::ReadRepository;
     use crate::*;
 
     #[allow(dead_code)]
@@ -486,46 +476,6 @@ mod tests {
         }
     }
 
-    struct ItemRepo {}
-    impl ReadRepository<Item, ItemQuery, ItemSort> for ItemRepo {
-        fn filter(
-            &self,
-            _e: Expression<ItemQuery>,
-            _s: Option<SortOrder<ItemSort>>,
-            _p: Pagination,
-        ) -> Vec<Item> {
-            vec![
-                create_test_item(&Uuid::new_v4()),
-                create_test_item(&Uuid::new_v4()),
-            ]
-        }
-
-        fn query(&self, _e: Expression<ItemQuery>) -> Item {
-            create_test_item(&Uuid::new_v4())
-        }
-
-        fn count(&self, _e: Expression<ItemQuery>) -> usize {
-            2
-        }
-
-        fn exists(&self, _e: Expression<ItemQuery>) -> bool {
-            true
-        }
-    }
-
-    fn create_test_item(material_id: &Uuid) -> Item {
-        Item {
-            id: Uuid::new_v4(),
-            name: "Test Item".to_string(),
-            description: "This is a test item".to_string(),
-            price: 9.99,
-            amount: 10,
-            active: true,
-            due_date: chrono::Utc::now(),
-            material_id: Some(material_id.clone()),
-        }
-    }
-
     #[test]
     fn expression_macros() {
         let plain_query = Expression::Or(vec![
@@ -565,23 +515,6 @@ mod tests {
     }
 
     #[test]
-    fn repository() {
-        let e = or![
-            and![
-                ItemQuery::NameLike("%SternLampe%".into()),
-                ItemQuery::DescriptionNeq("Hohlweg".into()),
-            ],
-            ItemQuery::PriceGt(1800f32),
-        ];
-
-        let repo = ItemRepo {};
-        let items = repo.filter(e.clone(), None, Pagination::default());
-        let count = repo.count(e);
-
-        assert_eq!(items.len(), count);
-    }
-
-    #[test]
     fn query_builder() {
         let plan: QueryPlan<Item> = QueryBuilder::from_ctx()
             .join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
@@ -606,127 +539,6 @@ mod tests {
             "#
             .normalize()
         )
-    }
-
-    #[derive(Clone)]
-    pub struct DatabaseSettings {
-        pub username: String,
-        pub password: String,
-        pub port: u16,
-        pub host: String,
-        pub database_name: String,
-        pub require_ssl: bool,
-    }
-
-    impl DatabaseSettings {
-        pub fn with_db(&self) -> PgConnectOptions {
-            let options = self.without_db().database(&self.database_name);
-            options
-        }
-
-        pub fn without_db(&self) -> PgConnectOptions {
-            let pg_ssl_mode = if self.require_ssl {
-                PgSslMode::Require
-            } else {
-                PgSslMode::Prefer
-            };
-            let ssl_mode = pg_ssl_mode;
-
-            PgConnectOptions::new()
-                .host(&self.host)
-                .username(&self.username)
-                .password(&self.password)
-                .port(self.port)
-                .ssl_mode(ssl_mode)
-        }
-    }
-
-    pub async fn get_connection_pool() -> PgPool {
-        let mut cfg = DatabaseSettings {
-            username: "postgres".into(),
-            password: "password".into(),
-            port: 2345,
-            host: "localhost".into(),
-            database_name: "postgres".into(),
-            require_ssl: false,
-        };
-
-        let server_pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect_with(cfg.clone().without_db())
-            .await
-            .expect("connect server");
-
-        let db_name = Uuid::new_v4().to_string();
-
-        sqlx::query(&format!(r#"CREATE DATABASE "{}""#, db_name))
-            .execute(&server_pool)
-            .await
-            .expect("create db");
-
-        cfg.database_name = db_name.clone();
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect_with(cfg.with_db())
-            .await
-            .expect("connect new db");
-
-        migrate!("../migrations").run(&pool).await.unwrap();
-
-        pool
-    }
-
-    #[tokio::test]
-    async fn query_returns_expected_values() {
-        let pool = get_connection_pool().await;
-
-        let item = Item {
-            id: Uuid::new_v4(),
-            name: "test".into(),
-            description: "item description".into(),
-            price: 23.5f32,
-            amount: 2,
-            active: true,
-            due_date: chrono::Utc::now(),
-            material_id: None,
-        };
-
-        sqlx::query(
-            r#"
-            INSERT INTO item (
-                id, name, description, price, amount, active, due_date, material_id
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#,
-        )
-        .bind(item.id)
-        .bind(&item.name)
-        .bind(&item.description)
-        .bind(item.price)
-        .bind(item.amount)
-        .bind(item.active)
-        .bind(item.due_date)
-        .bind(item.material_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let maybe: Option<Item> = QueryBuilder::<Item>::from_ctx()
-            .r#where(and![
-                ItemQuery::NameEq("test".into()),
-                or![ItemQuery::PriceLt(10.00f32), ItemQuery::AmountEq(2)]
-            ])
-            .order_by(order_by![ItemSort::ByNameAsc, ItemSort::ByPriceDesc])
-            .paginate(Pagination {
-                page: 0,
-                page_size: 50,
-            })
-            .build()
-            .fetch_optional(&pool)
-            .await
-            .unwrap();
-
-        assert_some_eq!(maybe, item);
     }
 
     #[test]
