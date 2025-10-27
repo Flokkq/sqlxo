@@ -1,4 +1,3 @@
-// filter_macros/src/lib.rs
 #![feature(let_chains)]
 
 use heck::{ToPascalCase, ToSnakeCase};
@@ -688,174 +687,131 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
         }
     };
 
-    let leaf_ident     = format_ident!("{}Leaf", struct_ident);
-    let expr_ident     = format_ident!("{}Expr", struct_ident);
-    let sort_web_ident = format_ident!("{}SortWeb", struct_ident);
-    let sort_dir_ident = format_ident!("{}SortDir", struct_ident);
-    let page_ident     = format_ident!("{}Page", struct_ident);
-    let filter_ident   = format_ident!("{}Filter", struct_ident);
+    let leaf_ident = format_ident!("{}Leaf", struct_ident);
+    let sort_field_ident = format_ident!("{}SortField", struct_ident);
 
-    let mut per_field_op_defs  = Vec::new();
-    let mut leaf_wrapper_defs  = Vec::new();
-    let mut leaf_enum_variants = Vec::new();
-
-    let mut sort_wrapper_defs  = Vec::new();
-    let mut sort_enum_variants = Vec::new();
+    let mut op_defs = Vec::new();
+    let mut leaf_structs = Vec::new();
+    let mut leaf_variants = Vec::new();
+    let mut sort_structs = Vec::new();
+    let mut sort_variants = Vec::new();
 
     for f in fields {
         let fname_ident = f.ident.as_ref().unwrap();
         let fname_snake = fname_ident.to_string();
-        let fname_pascal: String = fname_snake.to_pascal_case();
+        let fname_pascal = fname_snake.to_pascal_case();
         let ty = &f.ty;
 
         let op_ident = format_ident!("{}{}Op", struct_ident, fname_pascal);
-
         let leaf_wrap_ident = format_ident!("{}Leaf{}", struct_ident, fname_pascal);
-        let sort_wrap_ident = format_ident!("{}SortWeb{}", struct_ident, fname_pascal);
+        let sort_wrap_ident = format_ident!("{}Sort{}", struct_ident, fname_pascal);
 
         let leaf_variant_ident = format_ident!("{}", fname_pascal);
         let sort_variant_ident = format_ident!("{}", fname_pascal);
 
         let op_def = match classify_type(ty) {
-            Kind::String => {
-                quote! {
-                    #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-                    #[serde(untagged)]
-                    pub enum #op_ident {
-                        Eq        { eq: String },
-                        Neq       { neq: String },
-                        Like      { like: String },
-                        NotLike   { not_like: String },
-                        IsNull    { is_null: bool },
-                        IsNotNull { is_not_null: bool },
-                    }
+            Kind::String => quote! {
+                #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+                #[serde(untagged)]
+                pub enum #op_ident {
+                    Eq        { eq: String },
+                    Neq       { neq: String },
+                    Like      { like: String },
+                    NotLike   { not_like: String },
+                    IsNull    { is_null: bool },
+                    IsNotNull { is_not_null: bool },
                 }
-            }
-            Kind::Bool => {
-                quote! {
-                    #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-                    #[serde(untagged)]
-                    pub enum #op_ident {
-                        IsTrue  { is_true: bool },
-                        IsFalse { is_false: bool },
-                    }
+            },
+            Kind::Bool => quote! {
+                #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+                #[serde(untagged)]
+                pub enum #op_ident {
+                    IsTrue  { is_true: bool },
+                    IsFalse { is_false: bool },
                 }
-            }
-            Kind::Number => {
-                quote! {
-                    #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-                    #[serde(untagged)]
-                    pub enum #op_ident {
-                        Eq          { eq: f64 },
-                        Neq         { neq: f64 },
-                        Gt          { gt: f64 },
-                        Gte         { gte: f64 },
-                        Lt          { lt: f64 },
-                        Lte         { lte: f64 },
-                        Between     { between: [f64; 2] },
-                        NotBetween  { not_between: [f64; 2] },
-                    }
+            },
+            Kind::Number => quote! {
+                #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+                #[serde(untagged)]
+                pub enum #op_ident {
+                    Neq        { neq: f64 },
+                    Eq         { eq: f64 },
+                    Gt         { gt: f64 },
+                    Gte        { gte: f64 },
+                    Lt         { lt: f64 },
+                    Lte        { lte: f64 },
+                    Between    { between: [f64; 2] },
+                    NotBetween { not_between: [f64; 2] },
                 }
-            }
-            Kind::UuidOrScalarEq => {
-                quote! {
-                    #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-                    #[serde(untagged)]
-                    pub enum #op_ident {
-                        Eq        { eq: #ty },
-                        Neq       { neq: #ty },
-                        IsNull    { is_null: bool },
-                        IsNotNull { is_not_null: bool },
-                    }
+            },
+            Kind::UuidOrScalarEq => quote! {
+                #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+                #[serde(untagged)]
+                pub enum #op_ident {
+                    Eq        { eq: #ty },
+                    Neq       { neq: #ty },
+                    IsNull    { is_null: bool },
+                    IsNotNull { is_not_null: bool },
                 }
-            }
-            Kind::DateTime => {
-                quote! {
-                    #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-                    #[serde(untagged)]
-                    pub enum #op_ident {
-                        On        { on: #ty },
-                        Between   { between: [#ty; 2] },
-                        IsNull    { is_null: bool },
-                        IsNotNull { is_not_null: bool },
-                    }
+            },
+            Kind::DateTime => quote! {
+                #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+                #[serde(untagged)]
+                pub enum #op_ident {
+                    On        { on: #ty },
+                    Between   { between: [#ty; 2] },
+                    IsNull    { is_null: bool },
+                    IsNotNull { is_not_null: bool },
                 }
-            }
+            },
         };
-        per_field_op_defs.push(op_def);
+        op_defs.push(op_def);
 
-        let rename_lit = fname_snake.clone();
-        leaf_wrapper_defs.push(quote! {
+        leaf_structs.push(quote! {
             #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
             pub struct #leaf_wrap_ident {
-                #[serde(rename = #rename_lit)]
-                pub #fname_ident: #op_ident
+                #[serde(rename = #fname_snake)]
+                pub #fname_ident: #op_ident,
             }
         });
-        leaf_enum_variants.push(quote! { #leaf_variant_ident(#leaf_wrap_ident) });
+        leaf_variants.push(quote! { #leaf_variant_ident(#leaf_wrap_ident) });
 
-        sort_wrapper_defs.push(quote! {
+        sort_structs.push(quote! {
             #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
             pub struct #sort_wrap_ident {
-                pub #fname_ident: #sort_dir_ident
+                pub #fname_ident: ::filter_traits::DtoSortDir,
             }
         });
-        sort_enum_variants.push(quote! { #sort_variant_ident(#sort_wrap_ident) });
+        sort_variants.push(quote! { #sort_variant_ident(#sort_wrap_ident) });
     }
 
-    let expanded = quote! {
-        #(#per_field_op_defs)*
+    let impl_webquery_model = quote! {
+        impl ::filter_traits::WebQueryModel for #struct_ident {
+            type Leaf = #leaf_ident;
+            type SortField = #sort_field_ident;
+        }
+    };
 
-        #(#leaf_wrapper_defs)*
+    let expanded = quote! {
+        #(#op_defs)*
+
+        #(#leaf_structs)*
 
         #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
         #[serde(untagged)]
         pub enum #leaf_ident {
-            #(#leaf_enum_variants),*
+            #(#leaf_variants),*
         }
+
+        #(#sort_structs)*
 
         #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
         #[serde(untagged)]
-        pub enum #expr_ident {
-
-            #[schema(no_recursion)]
-            And  { and: Vec<#expr_ident> },
-
-            #[schema(no_recursion)]
-            Or   { or:  Vec<#expr_ident> },
-
-            Leaf (#leaf_ident),
+        pub enum #sort_field_ident {
+            #(#sort_variants),*
         }
 
-        #[derive(Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-        #[serde(rename_all = "lowercase")]
-        pub enum #sort_dir_ident { Asc, Desc }
-
-        #(#sort_wrapper_defs)*
-
-        #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-        #[serde(untagged)]
-        pub enum #sort_web_ident {
-            #(#sort_enum_variants),*
-        }
-
-        #[derive(Clone, Copy, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-        #[serde(rename_all = "camelCase")]
-        pub struct #page_ident {
-            pub page_size: u32,
-            pub page_no:   u32,
-        }
-
-        #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-        pub struct #filter_ident {
-            #[schema(no_recursion)]
-            pub filter: #expr_ident,
-
-            #[schema(no_recursion)]
-            pub sort:   Vec<#sort_web_ident>,
-
-            pub page:   #page_ident,
-        }
+        #impl_webquery_model
     };
 
     expanded.into()

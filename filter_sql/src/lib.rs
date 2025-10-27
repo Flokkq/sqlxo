@@ -408,6 +408,7 @@ macro_rules! order_by {
 mod tests {
     use filter_macros::Query;
     use filter_macros::WebQuery;
+    use filter_traits::DtoFilter;
     use filter_traits::JoinKind;
     use serde::Deserialize;
     use serde::Serialize;
@@ -560,7 +561,7 @@ mod tests {
             "page": { "pageSize": 10, "pageNo": 1 }
         });
 
-        let f: ItemDtoFilter = serde_json::from_value(json).expect("valid ItemDtoFilter");
+        let f: DtoFilter<ItemDto> = serde_json::from_value(json).expect("valid ItemDtoFilter");
 
         assert_eq!(f.page.page_size, 10);
         assert_eq!(f.page.page_no, 1);

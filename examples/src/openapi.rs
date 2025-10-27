@@ -15,18 +15,15 @@ pub struct ItemDto {
     pub due_date: DateTime<Utc>,
 }
 
-pub use ItemDto as _KeepRustHappy;
-
 #[allow(dead_code)]
 #[utoipa::path(
     post,
     path = "/items/filter",
-    request_body = ItemDtoFilter,
-    responses(
-        (status = 200, description = "Filtered items", body = [ItemDto])),
+    request_body = filter_traits::DtoFilter<ItemDto>,
+    responses((status = 200, description = "Filtered items", body = [ItemDto])),
     tag = "items"
 )]
-fn filter_items(_payload: ItemDtoFilter) -> Vec<ItemDto> {
+fn filter_items(_payload: filter_traits::DtoFilter<ItemDto>) -> Vec<ItemDto> {
     Vec::new()
 }
 
@@ -37,22 +34,25 @@ fn filter_items(_payload: ItemDtoFilter) -> Vec<ItemDto> {
     components(
         schemas(
             ItemDto,
-            ItemDtoFilter,
-            ItemDtoExpr,
+
             ItemDtoLeaf,
-            ItemDtoSortWeb,
-            ItemDtoSortDir,
-            ItemDtoPage
+            ItemDtoSortField,
+
+            filter_traits::DtoSortDir,
+            filter_traits::DtoPage,
+
+            filter_traits::GenericDtoExpression<ItemDtoLeaf>,
+            filter_traits::GenericDtoSort<ItemDtoSortField>,
+
+            filter_traits::DtoFilter<ItemDto>
         )
     ),
-    tags(
-        (name = "items", description = "Filtering Items with WebQuery payload")
-    )
+    tags((name = "items", description = "Filtering Items with WebQuery payload"))
 )]
 struct ApiDoc;
 
 fn main() {
     let doc = ApiDoc::openapi();
-    let json = serde_json::to_string_pretty(&doc).expect("serialize openapi");
+    let json = serde_json::to_string_pretty(&doc).unwrap();
     println!("{}", json);
 }
