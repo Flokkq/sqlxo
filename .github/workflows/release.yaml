@@ -1,9 +1,9 @@
 name: Generate Changelog
 
 on:
-  workflow_run:
-    workflows: ["Publish sqlxo"]
-    types: [completed]
+  push:
+    tags:
+      - "v*.*.*"
 
 permissions:
   contents: write
@@ -11,45 +11,34 @@ permissions:
 
 jobs:
   generate-changelog:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Generate Changelog
     runs-on: ubuntu-22.04
-
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set Up Git
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      - name: Derive tag
-        id: tag
-        run: echo "tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
-
       - name: Generate Changelog with git-cliff
         uses: orhun/git-cliff-action@main
-        id: cliff
+        id: git-cliff
         with:
           config: cliff.toml
           args: -vv --latest --no-exec --github-repo ${{ github.repository }}
 
-      - name: Build body
-        id: body
-        run: |
-          echo "content<<EOF" >> "$GITHUB_OUTPUT"
-          echo "### crates.io" >> "$GITHUB_OUTPUT"
-          echo "- sqlxo: https://crates.io/crates/sqlxo" >> "$GITHUB_OUTPUT"
-          echo "" >> "$GITHUB_OUTPUT"
-          echo "${{ steps.cliff.outputs.content }}" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Display Generated Changelog
+        run: echo "${{ steps.git-cliff.outputs.content }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          release_name: "Release ${{ steps.tag.outputs.tag }}"
-          body: ${{ steps.body.outputs.content }}
+          tag_name: ${{ github.ref }}
+          release_name: "Release ${{ github.ref }}"
+          body: ${{ steps.git-cliff.outputs.content }}
           draft: false
-          prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
