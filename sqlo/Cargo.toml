@@ -10,6 +10,10 @@ description = { workspace = true }
 keywords = ["sqlx", "query", "filter", "orm", "graphql like"]
 categories = ["database", "rest"]
 
+[features]
+default = []
+ignore-db-tests = []
+
 [dependencies]
 sqlo_macros = { workspace = true }
 sqlo_traits = { workspace = true }

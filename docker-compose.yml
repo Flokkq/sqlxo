@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16
-    container_name: filter-sql-db
+    container_name: sqlo-db
     restart: no
     environment:
       POSTGRES_HOSTADDR: "localhost"
