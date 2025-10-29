@@ -6,7 +6,6 @@ authors.workspace = true
 license = { workspace = true }
 repository = { workspace = true }
 description = "internal: proc-macros for sqlxo"
-publish = false
 
 crate-type = ["proc-macro", "rlib"]
 

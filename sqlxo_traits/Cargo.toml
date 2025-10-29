@@ -6,7 +6,6 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "internal: sqlxo trait definitions and DTO types"
-publish = false
 
 [dependencies]
 anyhow = { workspace = true }
