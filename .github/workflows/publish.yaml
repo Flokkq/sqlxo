@@ -1,0 +1,44 @@
+name: Publish sqlo
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+env:
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: clippy
+          override: true
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and test workspace
+        run: |
+          cargo check --all-features --workspace
+          cargo clippy --all-features --workspace -- -D warnings
+          cargo test --workspace --features dto,skip-db-tests
+
+      - name: Publish sqlo
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          cargo publish -p sqlo --no-verify
