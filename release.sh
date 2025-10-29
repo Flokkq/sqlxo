@@ -33,6 +33,11 @@ echo "Bumping workspace crate versions to $VER ..."
 cargo set-version --workspace "$VER"
 cargo update
 
+echo "Updating README.md version tags to $TAG ..."
+if [ -f README.md ]; then
+  perl -0777 -i -pe 's/\bv\d+\.\d+\.\d+(?:[-+][0-9A-Za-z\.-]+)?\b/'"$TAG"'/g' README.md
+fi
+
 echo "Preparing $TAG ..."
 
 # update the changelog
