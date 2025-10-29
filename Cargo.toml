@@ -1,6 +1,6 @@
 [workspace.package]
 name = "sql-filter"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 authors = ["Flokkq <webcla21@htl-kaindorf.at>"]
 license = "MIT"
@@ -18,8 +18,8 @@ members = [
 ]
 
 [workspace.dependencies]
-sqlxo_traits = { path = "sqlxo_traits", version = "0.1.5" }
-sqlxo_macros = { path = "sqlxo_macros", version = "0.1.5" }
+sqlxo_traits = { path = "sqlxo_traits", version = "0.1.6" }
+sqlxo_macros = { path = "sqlxo_macros", version = "0.1.6" }
 sqlxo = { path = "sqlxo" }
 
 serde = { version = "1.0", features = ["derive"] }
