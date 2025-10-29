@@ -9,7 +9,7 @@ Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums fr
 ```toml
 # Cargo.toml
 [dependencies]
-sqlxo = "v0.1.2"
+sqlxo = "0.1.8"
 ````
 
 ## Example
