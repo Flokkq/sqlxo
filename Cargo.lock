@@ -346,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "exampls"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1593,7 +1593,7 @@ dependencies = [
 
 [[package]]
 name = "sqlxo"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "sqlxo_macros"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1631,7 +1631,7 @@ dependencies = [
 
 [[package]]
 name = "sqlxo_traits"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde",
