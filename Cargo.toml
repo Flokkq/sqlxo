@@ -1,6 +1,6 @@
 [workspace.package]
 name = "sql-filter"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Flokkq <webcla21@htl-kaindorf.at>"]
 license = "MIT"
