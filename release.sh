@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v typos &>/dev/null; then
-  echo "typos is not installed. Run 'cargo install typos-cli' to install it, otherwise the typos won't be fixed"
-fi
-
-if ! command -v cargo-set-version &>/dev/null && ! command -v cargo-set-version >/dev/null; then
-  if ! command -v cargo >/dev/null || ! cargo set-version -h >/dev/null 2>&1; then
-    echo "cargo-edit is required. Install with: cargo install cargo-edit"
-    exit 1
-  fi
-fi
-
 if [ -z "${1:-}" ]; then
   echo "Please provide a tag."
   echo "Usage: ./release.sh v[X.Y.Z]"

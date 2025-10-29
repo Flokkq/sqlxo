@@ -38,6 +38,7 @@
                 cargo-edit
                 clippy
                 typos
+                git-cliff
 
                 # dev
                 pkg-config
