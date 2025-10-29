@@ -6,7 +6,7 @@ use serde::{
 	Deserialize,
 	Serialize,
 };
-use sqlo_macros::WebQuery;
+use sqlxo_macros::WebQuery;
 use utoipa::{
 	OpenApi,
 	ToSchema,
@@ -27,19 +27,19 @@ pub struct ItemDto {
 #[allow(dead_code)]
 #[utoipa::path(
     post,
-    path = "/items/sqlo",
-    request_body = sqlo_traits::DtoFilter<ItemDto>,
+    path = "/items/sqlxo",
+    request_body = sqlxo_traits::DtoFilter<ItemDto>,
     responses((status = 200, description = "Filtered items", body = [ItemDto])),
     tag = "items"
 )]
-fn sqlo_items(_payload: sqlo_traits::DtoFilter<ItemDto>) -> Vec<ItemDto> {
+fn sqlxo_items(_payload: sqlxo_traits::DtoFilter<ItemDto>) -> Vec<ItemDto> {
 	Vec::new()
 }
 
 #[derive(OpenApi)]
 #[openapi(
     info(title = "SQL Filter API", version = "1.0.0"),
-    paths(sqlo_items),
+    paths(sqlxo_items),
     components(
         schemas(
             ItemDto,
@@ -47,13 +47,13 @@ fn sqlo_items(_payload: sqlo_traits::DtoFilter<ItemDto>) -> Vec<ItemDto> {
             ItemDtoLeaf,
             ItemDtoSortField,
 
-            sqlo_traits::DtoSortDir,
-            sqlo_traits::DtoPage,
+            sqlxo_traits::DtoSortDir,
+            sqlxo_traits::DtoPage,
 
-            sqlo_traits::GenericDtoExpression<ItemDtoLeaf>,
-            sqlo_traits::GenericDtoSort<ItemDtoSortField>,
+            sqlxo_traits::GenericDtoExpression<ItemDtoLeaf>,
+            sqlxo_traits::GenericDtoSort<ItemDtoSortField>,
 
-            sqlo_traits::DtoFilter<ItemDto>
+            sqlxo_traits::DtoFilter<ItemDto>
         )
     ),
     tags((name = "items", description = "Filtering Items with WebQuery payload"))

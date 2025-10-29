@@ -9,9 +9,9 @@ path = "src/openapi.rs"
 name = "openapi"
 
 [dependencies]
-sqlo_macros = { workspace = true }
-sqlo_traits = { workspace = true }
-sqlo = { workspace = true }
+sqlxo_macros = { workspace = true }
+sqlxo_traits = { workspace = true }
+sqlxo = { workspace = true }
 
 sqlx = { workspace = true }
 anyhow = { workspace = true }

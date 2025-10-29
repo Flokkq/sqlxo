@@ -1,0 +1,16 @@
+[package]
+name = "sqlxo_traits"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "internal: sqlxo trait definitions and DTO types"
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+utoipa = { workspace = true }

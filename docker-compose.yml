@@ -1,11 +1,11 @@
 services:
   postgres:
     image: postgres:16
-    container_name: sqlo-db
+    container_name: sqlxo-db
     restart: no
     environment:
       POSTGRES_HOSTADDR: "localhost"
-      POSTGRES_DB: "sqlo"
+      POSTGRES_DB: "sqlxo"
       POSTGRES_USER: "postgres"
       POSTGRES_PASSWORD: "password"
     volumes:

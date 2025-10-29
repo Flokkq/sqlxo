@@ -2,7 +2,7 @@ name: Generate Changelog
 
 on:
   workflow_run:
-    workflows: ["Publish sqlo"]
+    workflows: ["Publish sqlxo"]
     types: [completed]
 
 permissions:
@@ -39,7 +39,7 @@ jobs:
         run: |
           echo "content<<EOF" >> "$GITHUB_OUTPUT"
           echo "### crates.io" >> "$GITHUB_OUTPUT"
-          echo "- sqlo: https://crates.io/crates/sqlo" >> "$GITHUB_OUTPUT"
+          echo "- sqlxo: https://crates.io/crates/sqlxo" >> "$GITHUB_OUTPUT"
           echo "" >> "$GITHUB_OUTPUT"
           echo "${{ steps.cliff.outputs.content }}" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"

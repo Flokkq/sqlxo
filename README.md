@@ -1,6 +1,6 @@
-# sqlo
+# sqlxo
 
-[![Crates.io](https://img.shields.io/crates/v/sqlo.svg)](https://crates.io/crates/sqlo)
+[![Crates.io](https://img.shields.io/crates/v/sqlxo.svg)](https://crates.io/crates/sqlxo)
 
 Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums from the `Query` derive macro.
 
@@ -9,7 +9,7 @@ Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums fr
 ```toml
 # Cargo.toml
 [dependencies]
-sqlo = "0.1.0"
+sqlxo = "0.1.0"
 ````
 
 ## Example
@@ -17,7 +17,7 @@ sqlo = "0.1.0"
 The `Query` derive macro generates all querying variants and sort fields for your model.
 
 ```rust
-use sqlo::{Query, QueryBuilder, Pagination, and, or, order_by};
+use sqlxo::{Query, QueryBuilder, Pagination, and, or, order_by};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 

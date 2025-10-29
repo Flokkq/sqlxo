@@ -1,4 +1,4 @@
-name: Publish sqlo
+name: Publish sqlxo
 
 on:
   push:
@@ -37,8 +37,8 @@ jobs:
           cargo clippy --all-features --workspace -- -D warnings
           cargo test --workspace --features dto,skip-db-tests
 
-      - name: Publish sqlo
+      - name: Publish sqlxo
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          cargo publish -p sqlo --no-verify
+          cargo publish -p sqlxo --no-verify
