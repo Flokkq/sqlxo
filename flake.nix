@@ -35,7 +35,9 @@
                 cargo-watch
                 cargo-tarpaulin
                 cargo-deny
+                cargo-edit
                 clippy
+                typos
 
                 # dev
                 pkg-config
