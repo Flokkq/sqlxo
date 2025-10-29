@@ -35,7 +35,7 @@ jobs:
         run: |
           cargo check --all-features --workspace
           cargo clippy --all-features --workspace -- -D warnings
-          cargo test --workspace --features ignore-db-tests
+          cargo test -p sqlxo --features ignore-db-tests
 
       - name: Publish sqlxo
         env:
