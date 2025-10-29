@@ -1,0 +1,5 @@
+error: `Query` requires named fields
+ --> tests/try/err/unnamed_fields.rs:5:13
+  |
+5 | pub struct T(String, i32);
+  |             ^^^^^^^^^^^^^

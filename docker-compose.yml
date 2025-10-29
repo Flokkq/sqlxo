@@ -5,7 +5,7 @@ services:
     restart: no
     environment:
       POSTGRES_HOSTADDR: "localhost"
-      POSTGRES_DB: "filter_sql"
+      POSTGRES_DB: "sqlo"
       POSTGRES_USER: "postgres"
       POSTGRES_PASSWORD: "password"
     volumes:

@@ -1,0 +1,38 @@
+[package]
+name = "sqlo_macros"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = { workspace = true }
+repository = { workspace = true }
+description = "internal: proc-macros for sqlo"
+publish = false
+
+crate-type = ["proc-macro", "rlib"]
+
+[lib]
+proc-macro = true
+
+[features]
+default          = ["infer-defaults"]
+infer-defaults   = []
+
+[dependencies]
+sqlo_traits = { workspace = true }
+
+validator = { workspace = true }
+chrono = { workspace = true }
+
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "1.0", features = ["full", "extra-traits"] }
+heck = "0.4"
+
+[dev-dependencies]
+sqlx = { workspace = true }
+anyhow = { workspace = true }
+
+trybuild = "1"
+insta     = "1"
+once_cell = "1"
+uuid = "1.18.1"

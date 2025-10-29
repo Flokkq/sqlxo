@@ -3,24 +3,36 @@ name = "sql-filter"
 version = "0.1.0"
 edition = "2021"
 authors = ["Flokkq <webcla21@htl-kaindorf.at>"]
+license = "MIT"
+repository = "https://github.com/Flokkq/sqlo"
+readme = "README.md"
+description = "sqlo: small SQL query builder + derives for filterable ORM-ish patterns"
 
 [workspace]
 resolver = "2"
 members = [
-  "filter_traits",
-  "filter_macros",
-  "filter_sql",
+  "sqlo_traits",
+  "sqlo_macros",
+  "sqlo",
   "examples"
 ]
 
 [workspace.dependencies]
-filter_traits = { path = "filter_traits" }
-filter_macros = { path = "filter_macros" }
-filter_sql = { path = "filter_sql" }
+sqlo_traits = { path = "sqlo_traits" }
+sqlo_macros = { path = "sqlo_macros" }
+sqlo = { path = "sqlo" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.145"
+uuid = { version = "1.18.1", features = ["v4", "serde", "fast-rng"] }
 chrono = { version = "0.4.42", features = ["serde"] }
+
+utoipa = { version = "5.4.0", features = ["axum_extras", "uuid", "chrono"] }
 
 anyhow = "1.0"
 validator = { version = "0.19.0", features = ["derive"] }
+
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time", "test-util"] }
 
 [workspace.dependencies.sqlx]
 version = "0.8.5"

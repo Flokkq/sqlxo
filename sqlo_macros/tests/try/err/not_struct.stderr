@@ -1,0 +1,13 @@
+error: enums are not supported
+ --> tests/try/err/not_struct.rs:5:1
+  |
+5 | / pub enum E {
+6 | |     A,
+7 | | }
+  | |_^
+
+error: `Query` supports only structs
+ --> tests/try/err/not_struct.rs:5:10
+  |
+5 | pub enum E {
+  |          ^

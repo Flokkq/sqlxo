@@ -350,64 +350,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "filter_macros",
- "filter_sql",
- "filter_traits",
  "serde",
  "serde_json",
+ "sqlo",
+ "sqlo_macros",
+ "sqlo_traits",
  "sqlx",
  "tokio",
  "utoipa",
  "uuid",
  "validator",
-]
-
-[[package]]
-name = "filter_macros"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "filter_traits",
- "heck 0.4.1",
- "insta",
- "once_cell",
- "proc-macro2",
- "quote",
- "sqlx",
- "syn 1.0.109",
- "trybuild",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "filter_sql"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "claims",
- "filter_macros",
- "filter_traits",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "utoipa",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "filter_traits"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "sqlx",
- "utoipa",
 ]
 
 [[package]]
@@ -1440,6 +1392,55 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "sqlo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "claims",
+ "serde",
+ "serde_json",
+ "sqlo_macros",
+ "sqlo_traits",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "utoipa",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "sqlo_macros"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "heck 0.4.1",
+ "insta",
+ "once_cell",
+ "proc-macro2",
+ "quote",
+ "sqlo_traits",
+ "sqlx",
+ "syn 1.0.109",
+ "trybuild",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "sqlo_traits"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "utoipa",
 ]
 
 [[package]]

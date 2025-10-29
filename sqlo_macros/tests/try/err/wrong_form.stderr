@@ -1,0 +1,5 @@
+error: expected #[sqlo(table_name = "...")]
+ --> tests/try/err/wrong_form.rs:5:1
+  |
+5 | #[sqlo = "oops"]
+  | ^^^^^^^^^^^^^^^^

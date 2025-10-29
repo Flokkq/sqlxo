@@ -1,5 +1,0 @@
-error: expected string literal: #[filter(table_name = "items")]
- --> tests/try/err/filter_wrong_literal.rs:5:23
-  |
-5 | #[filter(table_name = 123)]
-  |                       ^^^

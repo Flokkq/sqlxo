@@ -1,0 +1,5 @@
+error: unknown key in #[sqlo]
+ --> tests/try/err/unknown_key.rs:5:8
+  |
+5 | #[sqlo(foo = "bar")]
+  |        ^^^^^^^^^^^

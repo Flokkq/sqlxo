@@ -1,5 +1,0 @@
-error: expected #[filter(table_name = "...")]
- --> tests/try/err/filter_wrong_form.rs:5:1
-  |
-5 | #[filter = "oops"]
-  | ^^^^^^^^^^^^^^^^^^

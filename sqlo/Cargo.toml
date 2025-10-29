@@ -1,24 +1,29 @@
 [package]
-name = "exampls"
+name = "sqlo"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-
-[[bin]]
-path = "src/openapi.rs" 
-name = "openapi"
+license = { workspace = true }
+repository = { workspace = true }
+readme = { workspace = true }
+description = { workspace = true }
+keywords = ["sqlx", "query", "filter", "orm", "graphql like"]
+categories = ["database", "rest"]
 
 [dependencies]
 sqlo_macros = { workspace = true }
 sqlo_traits = { workspace = true }
-sqlo = { workspace = true }
 
-sqlx = { workspace = true }
 anyhow = { workspace = true }
 validator = { workspace = true }
-tokio = { workspace = true }
+sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+tokio = { workspace = true }
 utoipa = { workspace = true }
+thiserror = "2.0.17"
+
+[dev-dependencies]
+claims = "0.8.0"

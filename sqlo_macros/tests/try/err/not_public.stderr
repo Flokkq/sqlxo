@@ -1,0 +1,7 @@
+error: `Query` requires a `pub` struct
+ --> tests/try/err/not_public.rs:4:33
+  |
+4 | #[derive(Debug, Clone, FromRow, Query)]
+  |                                 ^^^^^
+  |
+  = note: this error originates in the derive macro `Query` (in Nightly builds, run with -Z macro-backtrace for more info)
