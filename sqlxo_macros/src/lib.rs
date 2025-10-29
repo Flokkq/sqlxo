@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 #![forbid(unsafe_code)]
 
 use heck::{
@@ -120,8 +119,8 @@ fn extract_table_name(input: &DeriveInput) -> syn::Result<Option<String>> {
 						other => {
 							return Err(syn::Error::new_spanned(
 								other,
-								"expected string literal: #[sqlxo(table_name = \
-								 \"items\")]",
+								"expected string literal: #[sqlxo(table_name \
+								 = \"items\")]",
 							));
 						}
 					}
