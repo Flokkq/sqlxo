@@ -1,18 +1,27 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{
+	DateTime,
+	Utc,
+};
+use serde::{
+	Deserialize,
+	Serialize,
+};
 use sqlo_macros::WebQuery;
-use utoipa::{OpenApi, ToSchema};
+use utoipa::{
+	OpenApi,
+	ToSchema,
+};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, WebQuery)]
 pub struct ItemDto {
-    pub id: Uuid,
-    pub name: String,
-    pub description: String,
-    pub price: f32,
-    pub amount: i32,
-    pub active: bool,
-    pub due_date: DateTime<Utc>,
+	pub id:          Uuid,
+	pub name:        String,
+	pub description: String,
+	pub price:       f32,
+	pub amount:      i32,
+	pub active:      bool,
+	pub due_date:    DateTime<Utc>,
 }
 
 #[allow(dead_code)]
@@ -24,7 +33,7 @@ pub struct ItemDto {
     tag = "items"
 )]
 fn sqlo_items(_payload: sqlo_traits::DtoFilter<ItemDto>) -> Vec<ItemDto> {
-    Vec::new()
+	Vec::new()
 }
 
 #[derive(OpenApi)]
@@ -52,7 +61,7 @@ fn sqlo_items(_payload: sqlo_traits::DtoFilter<ItemDto>) -> Vec<ItemDto> {
 struct ApiDoc;
 
 fn main() {
-    let doc = ApiDoc::openapi();
-    let json = serde_json::to_string_pretty(&doc).unwrap();
-    println!("{}", json);
+	let doc = ApiDoc::openapi();
+	let json = serde_json::to_string_pretty(&doc).unwrap();
+	println!("{}", json);
 }

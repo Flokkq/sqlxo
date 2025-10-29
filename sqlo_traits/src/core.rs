@@ -1,52 +1,58 @@
-use sqlx::{prelude::Type, Postgres};
+use sqlx::{
+	prelude::Type,
+	Postgres,
+};
 
-pub trait QueryModel =
-    Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + 'static;
+pub trait QueryModel = Send
+	+ Clone
+	+ Unpin
+	+ for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>
+	+ 'static;
 
 pub trait QueryQuery = Filterable + Send + Clone + Sync;
 
 pub trait QuerySort = Sortable + Send + Clone + Sync;
 
 pub trait Filterable {
-    type Entity: QueryModel;
+	type Entity: QueryModel;
 
-    fn write<W: SqlWrite>(&self, w: &mut W);
+	fn write<W: SqlWrite>(&self, w: &mut W);
 }
 
 pub trait SqlWrite {
-    fn push(&mut self, s: &str);
+	fn push(&mut self, s: &str);
 
-    fn bind<T>(&mut self, value: T)
-    where
-        T: sqlx::Encode<'static, Postgres> + Send + 'static,
-        T: Type<Postgres>;
+	fn bind<T>(&mut self, value: T)
+	where
+		T: sqlx::Encode<'static, Postgres> + Send + 'static,
+		T: Type<Postgres>;
 }
 
 pub trait QueryContext {
-    const TABLE: &'static str;
+	const TABLE: &'static str;
 
-    type Model: QueryModel;
-    type Query: QueryQuery;
-    type Sort: QuerySort;
-    type Join: SqlJoin;
+	type Model: QueryModel;
+	type Query: QueryQuery;
+	type Sort: QuerySort;
+	type Join: SqlJoin;
 }
 
 pub trait Sortable {
-    type Entity: QueryModel;
+	type Entity: QueryModel;
 
-    fn sort_clause(&self) -> String;
+	fn sort_clause(&self) -> String;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JoinKind {
-    Left,
-    Inner,
+	Left,
+	Inner,
 }
 
 pub trait SqlJoin {
-    fn to_sql(&self) -> String;
+	fn to_sql(&self) -> String;
 
-    fn kind(&self) -> JoinKind;
+	fn kind(&self) -> JoinKind;
 }
 
 pub trait Model {}
