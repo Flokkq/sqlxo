@@ -52,10 +52,10 @@ pub struct DtoPage {
 #[schema(bound = "Q: ToSchema, S: ToSchema")]
 pub struct GenericDtoFilter<Q, S> {
 	#[schema(no_recursion)]
-	pub filter: GenericDtoExpression<Q>,
+	pub filter: Option<GenericDtoExpression<Q>>,
 	#[schema(no_recursion)]
 	pub sort:   Vec<GenericDtoSort<S>>,
-	pub page:   DtoPage,
+	pub page:   Option<DtoPage>,
 }
 
 pub type DtoExpression<T> = GenericDtoExpression<<T as WebQueryModel>::Leaf>;
