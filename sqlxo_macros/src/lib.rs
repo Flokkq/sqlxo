@@ -981,7 +981,7 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		Data::Struct(s) => s,
 		_ => {
 			return Error::new_spanned(
-				&dto_ident,
+				dto_ident,
 				"`#[bind]` only supports structs",
 			)
 			.to_compile_error()

@@ -63,5 +63,5 @@ struct ApiDoc;
 fn main() {
 	let doc = ApiDoc::openapi();
 	let json = serde_json::to_string_pretty(&doc).unwrap();
-	println!("{}", json);
+	println!("{json}");
 }
