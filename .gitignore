@@ -90,3 +90,5 @@ configuration/.env.active
 .env
 schema.d.ts
 openapi.json
+
+*.zip
