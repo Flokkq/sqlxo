@@ -1,5 +1,5 @@
-use sqlxo_macros::Query;
 use sqlx::prelude::FromRow;
+use sqlxo_macros::Query;
 use uuid::Uuid;
 
 #[allow(dead_code)]

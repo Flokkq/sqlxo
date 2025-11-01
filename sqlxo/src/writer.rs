@@ -1,12 +1,12 @@
+use sqlx::{
+	Postgres,
+	Type,
+};
 use sqlxo_traits::SqlWrite;
 use sqlxo_traits::{
 	Filterable,
 	Sortable,
 	SqlJoin,
-};
-use sqlx::{
-	Postgres,
-	Type,
 };
 
 use crate::expression::Expression;

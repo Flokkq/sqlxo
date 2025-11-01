@@ -1,11 +1,11 @@
+use sqlx::{
+	Executor,
+	Postgres,
+};
 use sqlxo_traits::{
 	Filterable,
 	QueryContext,
 	Sortable,
-};
-use sqlx::{
-	Executor,
-	Postgres,
 };
 
 use crate::expression::Expression;

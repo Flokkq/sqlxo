@@ -1,11 +1,11 @@
 use crate::ItemQuery::*;
 use crate::ItemSort::*;
+use sqlx::FromRow;
 use sqlxo_macros::Query;
 use sqlxo_traits::Filterable;
 use sqlxo_traits::QueryContext;
 use sqlxo_traits::Sortable;
 use sqlxo_traits::SqlWrite;
-use sqlx::FromRow;
 use uuid::Uuid;
 
 #[derive(Default, Debug)]
@@ -102,7 +102,7 @@ fn query_enum_has_uuid_ops_and_datetime_ops() {
 	let _ = IdIsNotNull;
 
 	let now = chrono::Utc::now();
-	let _ = DueDateOn(now);
+	let _ = DueDateEq(now);
 	let _ = DueDateBetween(now, now);
 	let _ = DueDateIsNull;
 	let _ = DueDateIsNotNull;
@@ -185,7 +185,7 @@ fn datetime_ops_write_expected_sql() {
 	let now: DateTime<Utc> = Utc::now();
 
 	let mut w = DummyWriter::default();
-	DueDateOn(now).write(&mut w);
+	DueDateEq(now).write(&mut w);
 	assert_eq!(w.sql, "due_date = $1");
 	assert_eq!(w.binds, 1);
 
