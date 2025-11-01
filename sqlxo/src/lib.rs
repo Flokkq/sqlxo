@@ -9,6 +9,7 @@ pub use sqlxo_traits::{
 	DtoSort,
 	DtoSortDir,
 	Filterable,
+	GenericDtoSort,
 	JoinKind,
 	QueryContext,
 	QueryModel,
