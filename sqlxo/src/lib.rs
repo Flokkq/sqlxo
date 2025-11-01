@@ -40,6 +40,7 @@ mod head;
 mod macros;
 mod pagination;
 mod sort;
+mod webfilter;
 mod writer;
 
 pub use builder::{

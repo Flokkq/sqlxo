@@ -15,6 +15,11 @@ pub trait WebQueryModel {
 		+ for<'de> serde::Deserialize<'de>;
 }
 
+pub trait WebSortAccess: WebQueryModel {
+	fn sort_field(s: &DtoSort<Self>) -> <Self as WebQueryModel>::SortField;
+	fn sort_dir(s: &DtoSort<Self>) -> DtoSortDir;
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 #[serde(untagged)]
 pub enum GenericDtoExpression<Q> {

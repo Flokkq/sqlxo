@@ -846,3 +846,176 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 
 	out.into()
 }
+
+#[proc_macro_attribute]
+pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
+	let dto = parse_macro_input!(item as DeriveInput);
+
+	let entity_ty: syn::Type = {
+		let s = attr.to_string();
+		let s = s.trim();
+		let cleaned = if s.starts_with('=') { &s[1..] } else { s };
+		syn::parse_str(cleaned.trim())
+			.expect("bind attribute requires a target type, e.g. #[bind(Item)]")
+	};
+
+	let dto_ident = &dto.ident;
+	let leaf_ident = format_ident!("{}Leaf", dto_ident);
+	let sort_field_ident = format_ident!("{}SortField", dto_ident);
+
+	let data = match &dto.data {
+		Data::Struct(s) => s,
+		_ => {
+			return Error::new_spanned(
+				&dto_ident,
+				"`#[bind]` only supports structs",
+			)
+			.to_compile_error()
+			.into();
+		}
+	};
+
+	let mut leaf_arms = Vec::new();
+	let mut sort_arms = Vec::new();
+
+	for field in data.fields.iter() {
+		let fname_ident = field.ident.as_ref().expect("named field");
+		let fname_snake = fname_ident.to_string();
+		let fname_pascal = fname_snake.to_pascal_case();
+		let ty = &field.ty;
+
+		// DTO-Typen/Wrapper
+		let leaf_wrap_ident =
+			format_ident!("{}Leaf{}", dto_ident, fname_pascal);
+		let sort_wrap_ident =
+			format_ident!("{}Sort{}", dto_ident, fname_pascal);
+		let op_ident = format_ident!("{}{}Op", dto_ident, fname_pascal);
+
+		// Enum-Varianten
+		let leaf_variant_ident = format_ident!("{}", fname_pascal);
+		let sort_variant_ident = format_ident!("{}", fname_pascal);
+
+		// Entity-Seite (vom #[derive(Query)] erzeugt)
+		let q_eq = format_ident!("{}Eq", fname_pascal);
+		let q_neq = format_ident!("{}Neq", fname_pascal);
+		let q_like = format_ident!("{}Like", fname_pascal);
+		let q_not_like = format_ident!("{}NotLike", fname_pascal);
+		let q_is_null = format_ident!("{}IsNull", fname_pascal);
+		let q_is_notnull = format_ident!("{}IsNotNull", fname_pascal);
+		let q_gt = format_ident!("{}Gt", fname_pascal);
+		let q_gte = format_ident!("{}Gte", fname_pascal); // wichtig: Gte
+		let q_lt = format_ident!("{}Lt", fname_pascal);
+		let q_lte = format_ident!("{}Lte", fname_pascal); // wichtig: Lte
+		let q_between = format_ident!("{}Between", fname_pascal);
+		let q_not_between = format_ident!("{}NotBetween", fname_pascal);
+		let q_is_true = format_ident!("{}IsTrue", fname_pascal);
+		let q_is_false = format_ident!("{}IsFalse", fname_pascal);
+		let q_on = format_ident!("{}On", fname_pascal); // DateTime
+
+		let s_by_asc = format_ident!("By{}Asc", fname_pascal);
+		let s_by_desc = format_ident!("By{}Desc", fname_pascal);
+
+		// ---------- LEAF-MAPPING nach Feldtyp ----------
+		match classify_type(ty) {
+			Kind::String => {
+				leaf_arms.push(quote! {
+                    #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
+                        match &inner.#fname_ident {
+                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(v.clone()),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(v.clone()),
+                            #op_ident::Like{like: v}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_like(v.clone()),
+                            #op_ident::NotLike{not_like: v} => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_like(v.clone()),
+                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                        }
+                    }
+                });
+			}
+			Kind::Bool => {
+				leaf_arms.push(quote! {
+                    #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
+                        match &inner.#fname_ident {
+                            #op_ident::IsTrue{..}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_true,
+                            #op_ident::IsFalse{..} => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_false,
+                        }
+                    }
+                });
+			}
+			Kind::Number => {
+				leaf_arms.push(quote! {
+                    #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
+                        match &inner.#fname_ident {
+                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gt(*v),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gte(*v),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lt(*v),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lte(*v),
+                            #op_ident::Between{between: v}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::NotBetween{not_between: v}
+                                                            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_between(v[0], v[1]),
+                        }
+                    }
+                });
+			}
+			Kind::UuidOrScalarEq => {
+				leaf_arms.push(quote! {
+                    #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
+                        match &inner.#fname_ident {
+                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                        }
+                    }
+                });
+			}
+			Kind::DateTime => {
+				leaf_arms.push(quote! {
+                    #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
+                        match &inner.#fname_ident {
+                            #op_ident::On{on: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_on(*v),
+                            #op_ident::Between{between: v}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                        }
+                    }
+                });
+			}
+		}
+
+		// ---------- SORT-MAPPING (immer vorhanden) ----------
+		sort_arms.push(quote! {
+            sqlxo_traits::GenericDtoSort(#sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. })) => {
+                match inner.#fname_ident {
+                    sqlxo_traits::DtoSortDir::Asc  => <#entity_ty as sqlxo_traits::QueryContext>::Sort::#s_by_asc,
+                    sqlxo_traits::DtoSortDir::Desc => <#entity_ty as sqlxo_traits::QueryContext>::Sort::#s_by_desc,
+                }
+            }
+        });
+	}
+
+	let out = quote! {
+		#dto
+
+		impl sqlxo_traits::Bind<#entity_ty> for #dto_ident {
+			fn map_leaf(
+				leaf: &<#dto_ident as sqlxo_traits::WebQueryModel>::Leaf
+			) -> <#entity_ty as sqlxo_traits::QueryContext>::Query {
+				match leaf {
+					#(#leaf_arms),* ,
+				}
+			}
+
+			fn map_sort_token(
+				sort: &sqlxo_traits::DtoSort<Self>
+			) -> <#entity_ty as sqlxo_traits::QueryContext>::Sort {
+				match sort {
+					#(#sort_arms),* ,
+				}
+			}
+		}
+	};
+
+	out.into()
+}

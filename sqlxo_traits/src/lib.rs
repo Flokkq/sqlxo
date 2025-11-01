@@ -8,3 +8,7 @@ pub use core::*;
 mod web;
 
 pub use web::*;
+
+mod bind;
+
+pub use bind::*;

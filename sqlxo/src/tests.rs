@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use claims::assert_some;
 use serde::{
 	Deserialize,
 	Serialize,
@@ -8,7 +9,9 @@ use serde_json::{
 	json,
 	Value,
 };
+use sqlx::FromRow;
 use sqlxo_macros::{
+	bind,
 	Query,
 	WebQuery,
 };
@@ -16,7 +19,6 @@ use sqlxo_traits::{
 	DtoFilter,
 	JoinKind,
 };
-use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::builder::{
@@ -65,6 +67,7 @@ pub struct Item {
 }
 
 #[allow(dead_code)]
+#[bind(Item)]
 #[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]
 pub struct ItemDto {
 	id:          Uuid,
@@ -178,6 +181,45 @@ fn deserialize_itemdto_sqlxo_json() {
 	let f: DtoFilter<ItemDto> =
 		serde_json::from_value(json).expect("valid ItemDtoFilter");
 
-	assert_eq!(f.page.page_size, 10);
-	assert_eq!(f.page.page_no, 1);
+	assert_some!(f.page);
+	assert_eq!(f.page.unwrap().page_size, 10);
+	assert_eq!(f.page.unwrap().page_no, 1);
+}
+
+#[test]
+fn query_builder_from_dto_filter() {
+	let json: Value = json!({
+		"filter": {
+			"and": [
+				{ "name": { "like": "%Sternlampe%" } },
+				{ "or": [
+					{ "price": { "gt": 18.00 } },
+					{ "description": { "neq": "von Hohlweg" } }
+				]}
+			]
+		},
+		"sort": [
+			{ "name": "asc" },
+			{ "description": "desc" }
+		],
+		"page": { "pageSize": 10, "pageNo": 1 }
+	});
+
+	let f: DtoFilter<ItemDto> =
+		serde_json::from_value(json).expect("valid ItemDtoFilter");
+
+	let plan: QueryPlan<Item> = QueryBuilder::<Item>::from_dto::<ItemDto>(&f)
+		.join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
+		.build();
+
+	assert_eq!(
+		plan.sql(BuildType::Raw).trim_start().normalize(),
+		r#"
+        LEFT JOIN material ON "item"."material_id" = "material"."id"
+        WHERE (name LIKE $1 AND (price > $2 OR description <> $3))
+        ORDER BY name ASC, description DESC
+        LIMIT $4 OFFSET $5
+    "#
+		.normalize()
+	);
 }
