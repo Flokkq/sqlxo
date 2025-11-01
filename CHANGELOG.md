@@ -8,6 +8,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.2.0 - ([d6f80c3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/d6f80c3a4f34cba969c8f779336f06cac63a684d))
 - *(release)* Prepare for v0.1.9 - ([125fcec](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/125fcec80788a0a5f6e80e9b7010724825cc7ad8))
 
 
