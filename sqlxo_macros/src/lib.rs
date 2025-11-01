@@ -964,7 +964,11 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let entity_ty: syn::Type = {
 		let s = attr.to_string();
 		let s = s.trim();
-		let cleaned = if s.starts_with('=') { &s[1..] } else { s };
+		let cleaned = if let Some(stripped) = s.strip_prefix('=') {
+			stripped
+		} else {
+			s
+		};
 		syn::parse_str(cleaned.trim())
 			.expect("bind attribute requires a target type, e.g. #[bind(Item)]")
 	};
