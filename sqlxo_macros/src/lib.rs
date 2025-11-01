@@ -29,6 +29,8 @@ enum Kind {
 	Number,
 	UuidOrScalarEq,
 	DateTime,
+	Date,
+	Time,
 }
 
 fn classify_type(ty: &syn::Type) -> Kind {
@@ -63,6 +65,16 @@ fn classify_type(ty: &syn::Type) -> Kind {
 			seg_names.iter().any(|s| s == "chrono")
 		{
 			return Kind::DateTime;
+		}
+		if seg_names.contains(&"NaiveDate".to_string()) &&
+			seg_names.iter().any(|s| s == "chrono")
+		{
+			return Kind::Date;
+		}
+		if seg_names.contains(&"NaiveTime".to_string()) &&
+			seg_names.iter().any(|s| s == "chrono")
+		{
+			return Kind::Time;
 		}
 
 		let ints = [
@@ -495,20 +507,36 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			}
 
 			Kind::DateTime => {
-				let v_on = format_ident!("{}On", field_name_pascal);
+				let v_eq = format_ident!("{}Eq", field_name_pascal);
+				let v_neq = format_ident!("{}Neq", field_name_pascal);
+				let v_gt = format_ident!("{}Gt", field_name_pascal);
+				let v_gte = format_ident!("{}Gte", field_name_pascal);
+				let v_lt = format_ident!("{}Lt", field_name_pascal);
+				let v_lte = format_ident!("{}Lte", field_name_pascal);
 				let v_between = format_ident!("{}Between", field_name_pascal);
+				let v_notbetween =
+					format_ident!("{}NotBetween", field_name_pascal);
 				let v_is_null = format_ident!("{}IsNull", field_name_pascal);
 				let v_is_notnul =
 					format_ident!("{}IsNotNull", field_name_pascal);
 
-				query_variants.push(quote! { #v_on(#ty) });
+				query_variants.push(quote! { #v_eq(#ty)          });
+				query_variants.push(quote! { #v_neq(#ty)         });
+				query_variants.push(quote! { #v_gt(#ty)          });
+				query_variants.push(quote! { #v_gte(#ty)         });
+				query_variants.push(quote! { #v_lt(#ty)          });
+				query_variants.push(quote! { #v_lte(#ty)         });
 				query_variants.push(quote! { #v_between(#ty,#ty) });
+				query_variants.push(quote! { #v_notbetween(#ty,#ty) });
 				query_variants.push(quote! { #v_is_null });
 				query_variants.push(quote! { #v_is_notnul });
 
-				write_arms.push(
-                    quote! { Self::#v_on(v)  => { w.push(concat!(#col, " = ")); w.bind(*v); } },
-                );
+				write_arms.push(quote! { Self::#v_eq(v)  => { w.push(concat!(#col, " = "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_neq(v) => { w.push(concat!(#col, " <> ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gt(v)  => { w.push(concat!(#col, " > "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gte(v) => { w.push(concat!(#col, " >= ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lt(v)  => { w.push(concat!(#col, " < "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lte(v) => { w.push(concat!(#col, " <= ")); w.bind(*v); } });
 
 				write_arms.push(quote! {
 					Self::#v_between(a, b) => {
@@ -519,12 +547,69 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 					}
 				});
 
-				write_arms.push(
-                    quote! { Self::#v_is_null    => { w.push(concat!(#col, " IS NULL"));     } },
-                );
-				write_arms.push(
-                    quote! { Self::#v_is_notnul  => { w.push(concat!(#col, " IS NOT NULL")); } },
-                );
+				write_arms.push(quote! {
+					Self::#v_notbetween(a, b) => {
+						w.push(concat!(#col, " NOT BETWEEN "));
+						w.bind(*a);
+						w.push(" AND ");
+						w.bind(*b);
+					}
+				});
+				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#col, " IS NULL"));     } });
+				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#col, " IS NOT NULL")); } });
+			}
+
+			Kind::Date | Kind::Time => {
+				let v_eq = format_ident!("{}Eq", field_name_pascal);
+				let v_neq = format_ident!("{}Neq", field_name_pascal);
+				let v_gt = format_ident!("{}Gt", field_name_pascal);
+				let v_gte = format_ident!("{}Gte", field_name_pascal);
+				let v_lt = format_ident!("{}Lt", field_name_pascal);
+				let v_lte = format_ident!("{}Lte", field_name_pascal);
+				let v_between = format_ident!("{}Between", field_name_pascal);
+				let v_notbetween =
+					format_ident!("{}NotBetween", field_name_pascal);
+				let v_is_null = format_ident!("{}IsNull", field_name_pascal);
+				let v_is_notnul =
+					format_ident!("{}IsNotNull", field_name_pascal);
+
+				query_variants.push(quote! { #v_eq(#ty)          });
+				query_variants.push(quote! { #v_neq(#ty)         });
+				query_variants.push(quote! { #v_gt(#ty)          });
+				query_variants.push(quote! { #v_gte(#ty)         });
+				query_variants.push(quote! { #v_lt(#ty)          });
+				query_variants.push(quote! { #v_lte(#ty)         });
+				query_variants.push(quote! { #v_between(#ty,#ty) });
+				query_variants.push(quote! { #v_notbetween(#ty,#ty) });
+				query_variants.push(quote! { #v_is_null });
+				query_variants.push(quote! { #v_is_notnul });
+
+				write_arms.push(quote! { Self::#v_eq(v)  => { w.push(concat!(#col, " = "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_neq(v) => { w.push(concat!(#col, " <> ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gt(v)  => { w.push(concat!(#col, " > "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gte(v) => { w.push(concat!(#col, " >= ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lt(v)  => { w.push(concat!(#col, " < "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lte(v) => { w.push(concat!(#col, " <= ")); w.bind(*v); } });
+
+				write_arms.push(quote! {
+					Self::#v_between(a, b) => {
+						w.push(concat!(#col, " BETWEEN "));
+						w.bind(*a);
+						w.push(" AND ");
+						w.bind(*b);
+					}
+				});
+
+				write_arms.push(quote! {
+					Self::#v_notbetween(a, b) => {
+						w.push(concat!(#col, " NOT BETWEEN "));
+						w.bind(*a);
+						w.push(" AND ");
+						w.bind(*b);
+					}
+				});
+				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#col, " IS NULL"));     } });
+				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#col, " IS NOT NULL")); } });
 			}
 		}
 	}
@@ -778,10 +863,35 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
 				#[serde(untagged)]
 				pub enum #op_ident {
-					On        { on: #ty },
-					Between   { between: [#ty; 2] },
-					IsNull    { is_null: bool },
-					IsNotNull { is_not_null: bool },
+					// Backward-compatible alias; maps to Eq
+					On         { on: #ty },
+					Eq         { eq: #ty },
+					Neq        { neq: #ty },
+					Gt         { gt: #ty },
+					Gte        { gte: #ty },
+					Lt         { lt: #ty },
+					Lte        { lte: #ty },
+					Between    { between: [#ty; 2] },
+					NotBetween { not_between: [#ty; 2] },
+					IsNull     { is_null: bool },
+					IsNotNull  { is_not_null: bool },
+				}
+			},
+
+			Kind::Date | Kind::Time => quote! {
+				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+				#[serde(untagged)]
+				pub enum #op_ident {
+					Eq         { eq: #ty },
+					Neq        { neq: #ty },
+					Gt         { gt: #ty },
+					Gte        { gte: #ty },
+					Lt         { lt: #ty },
+					Lte        { lte: #ty },
+					Between    { between: [#ty; 2] },
+					NotBetween { not_between: [#ty; 2] },
+					IsNull     { is_null: bool },
+					IsNotNull  { is_not_null: bool },
 				}
 			},
 		};
@@ -884,18 +994,15 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		let fname_pascal = fname_snake.to_pascal_case();
 		let ty = &field.ty;
 
-		// DTO-Typen/Wrapper
 		let leaf_wrap_ident =
 			format_ident!("{}Leaf{}", dto_ident, fname_pascal);
 		let sort_wrap_ident =
 			format_ident!("{}Sort{}", dto_ident, fname_pascal);
 		let op_ident = format_ident!("{}{}Op", dto_ident, fname_pascal);
 
-		// Enum-Varianten
 		let leaf_variant_ident = format_ident!("{}", fname_pascal);
 		let sort_variant_ident = format_ident!("{}", fname_pascal);
 
-		// Entity-Seite (vom #[derive(Query)] erzeugt)
 		let q_eq = format_ident!("{}Eq", fname_pascal);
 		let q_neq = format_ident!("{}Neq", fname_pascal);
 		let q_like = format_ident!("{}Like", fname_pascal);
@@ -903,19 +1010,17 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		let q_is_null = format_ident!("{}IsNull", fname_pascal);
 		let q_is_notnull = format_ident!("{}IsNotNull", fname_pascal);
 		let q_gt = format_ident!("{}Gt", fname_pascal);
-		let q_gte = format_ident!("{}Gte", fname_pascal); // wichtig: Gte
+		let q_gte = format_ident!("{}Gte", fname_pascal);
 		let q_lt = format_ident!("{}Lt", fname_pascal);
-		let q_lte = format_ident!("{}Lte", fname_pascal); // wichtig: Lte
+		let q_lte = format_ident!("{}Lte", fname_pascal);
 		let q_between = format_ident!("{}Between", fname_pascal);
 		let q_not_between = format_ident!("{}NotBetween", fname_pascal);
 		let q_is_true = format_ident!("{}IsTrue", fname_pascal);
 		let q_is_false = format_ident!("{}IsFalse", fname_pascal);
-		let q_on = format_ident!("{}On", fname_pascal); // DateTime
 
 		let s_by_asc = format_ident!("By{}Asc", fname_pascal);
 		let s_by_desc = format_ident!("By{}Desc", fname_pascal);
 
-		// ---------- LEAF-MAPPING nach Feldtyp ----------
 		match classify_type(ty) {
 			Kind::String => {
 				leaf_arms.push(quote! {
@@ -974,8 +1079,35 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::On{on: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_on(*v),
+                            #op_ident::On{on: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gt(*v),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gte(*v),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lt(*v),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lte(*v),
                             #op_ident::Between{between: v}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::NotBetween{not_between: v}
+                                                            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_between(v[0], v[1]),
+                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                        }
+                    }
+                });
+			}
+			Kind::Date | Kind::Time => {
+				leaf_arms.push(quote! {
+                    #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
+                        match &inner.#fname_ident {
+                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gt(*v),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gte(*v),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lt(*v),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lte(*v),
+                            #op_ident::Between{between: v}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::NotBetween{not_between: v}
+                                                            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_between(v[0], v[1]),
                             #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
                             #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
                         }
@@ -984,7 +1116,6 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 			}
 		}
 
-		// ---------- SORT-MAPPING (immer vorhanden) ----------
 		sort_arms.push(quote! {
             sqlxo_traits::GenericDtoSort(#sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. })) => {
                 match inner.#fname_ident {
