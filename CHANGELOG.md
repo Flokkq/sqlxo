@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.2.2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.2.1..v0.2.2) - 2025-11-01
+
+
+
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.2.2 - ([68a691c](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/68a691c68f2b49788defc8c95d312da98897252b))
+
+
 ## [0.2.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.2.0..v0.2.1) - 2025-11-01
 
 
