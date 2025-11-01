@@ -4,6 +4,9 @@
 
 Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums from the `Query` derive macro.
 
+> [!NOTE]
+> I'm sorry for the broken version and version skips. I'm working on it
+
 ## Example
 
 The `Query` derive macro generates all querying variants and sort fields for your model.
