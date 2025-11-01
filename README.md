@@ -4,14 +4,6 @@
 
 Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums from the `Query` derive macro.
 
-## Installation
-
-```toml
-# Cargo.toml
-[dependencies]
-sqlxo = "v0.1.9"
-````
-
 ## Example
 
 The `Query` derive macro generates all querying variants and sort fields for your model.
@@ -74,7 +66,7 @@ LIMIT $4 OFFSET $5
 
 ## Support
 
-postgres only
+currently postgres only
 
 ## Contributing
 
