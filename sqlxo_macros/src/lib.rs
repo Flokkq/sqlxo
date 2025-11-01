@@ -517,8 +517,8 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				query_variants.push(quote! { #v_is_null });
 				query_variants.push(quote! { #v_is_notnul });
 
-				write_arms.push(quote! { Self::#v_eq(v)      => { w.push(concat!(#col, " = "));       w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_neq(v)     => { w.push(concat!(#col, " <> "));      w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_eq(v)      => { w.push(concat!(#col, " = "));       w.bind(v.clone()); } });
+				write_arms.push(quote! { Self::#v_neq(v)     => { w.push(concat!(#col, " <> "));      w.bind(v.clone()); } });
 				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#col, " IS NULL"));                 } });
 				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#col, " IS NOT NULL"));             } });
 			}
@@ -1091,8 +1091,8 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(v.clone()),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(v.clone()),
                             #op_ident::IsNull{..}           => <#entity_ty as #root::QueryContext>::Query::#q_is_null,
                             #op_ident::IsNotNull{..}        => <#entity_ty as #root::QueryContext>::Query::#q_is_notnull,
                         }
@@ -1103,16 +1103,16 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::On{on: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(*v),
-                            #op_ident::Gt{gt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_gt(*v),
-                            #op_ident::Gte{gte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_gte(*v),
-                            #op_ident::Lt{lt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_lt(*v),
-                            #op_ident::Lte{lte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_lte(*v),
-                            #op_ident::Between{between: v}  => <#entity_ty as #root::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::On{on: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(v.clone()),
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(v.clone()),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(v.clone()),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_gt(v.clone()),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_gte(v.clone()),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_lt(v.clone()),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_lte(v.clone()),
+                            #op_ident::Between{between: v}  => <#entity_ty as #root::QueryContext>::Query::#q_between(v[0].clone(), v[1].clone()),
                             #op_ident::NotBetween{not_between: v}
-                                                            => <#entity_ty as #root::QueryContext>::Query::#q_not_between(v[0], v[1]),
+                                                            => <#entity_ty as #root::QueryContext>::Query::#q_not_between(v[0].clone(), v[1].clone()),
                             #op_ident::IsNull{..}           => <#entity_ty as #root::QueryContext>::Query::#q_is_null,
                             #op_ident::IsNotNull{..}        => <#entity_ty as #root::QueryContext>::Query::#q_is_notnull,
                         }
@@ -1123,15 +1123,15 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(*v),
-                            #op_ident::Gt{gt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_gt(*v),
-                            #op_ident::Gte{gte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_gte(*v),
-                            #op_ident::Lt{lt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_lt(*v),
-                            #op_ident::Lte{lte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_lte(*v),
-                            #op_ident::Between{between: v}  => <#entity_ty as #root::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(v.clone()),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(v.clone()),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_gt(v.clone()),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_gte(v.clone()),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_lt(v.clone()),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_lte(v.clone()),
+                            #op_ident::Between{between: v}  => <#entity_ty as #root::QueryContext>::Query::#q_between(v[0].clone(), v[1].clone()),
                             #op_ident::NotBetween{not_between: v}
-                                                            => <#entity_ty as #root::QueryContext>::Query::#q_not_between(v[0], v[1]),
+                                                            => <#entity_ty as #root::QueryContext>::Query::#q_not_between(v[0].clone(), v[1].clone()),
                             #op_ident::IsNull{..}           => <#entity_ty as #root::QueryContext>::Query::#q_is_null,
                             #op_ident::IsNotNull{..}        => <#entity_ty as #root::QueryContext>::Query::#q_is_notnull,
                         }
@@ -1141,7 +1141,7 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		}
 
 		sort_arms.push(quote! {
-            sqlxo_traits::GenericDtoSort(#sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. })) => {
+            #root::GenericDtoSort(#sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. })) => {
                 match inner.#fname_ident {
                     #root::DtoSortDir::Asc  => <#entity_ty as #root::QueryContext>::Sort::#s_by_asc,
                     #root::DtoSortDir::Desc => <#entity_ty as #root::QueryContext>::Sort::#s_by_desc,
