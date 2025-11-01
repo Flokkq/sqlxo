@@ -1,30 +1,8 @@
 #![forbid(unsafe_code)]
 extern crate self as sqlxo;
 
-pub use sqlxo_traits::{
-	Bind,
-	DtoExpression,
-	DtoFilter,
-	DtoPage,
-	DtoSort,
-	DtoSortDir,
-	Filterable,
-	GenericDtoSort,
-	JoinKind,
-	QueryContext,
-	QueryModel,
-	Sortable,
-	SqlJoin,
-	SqlWrite,
-	WebQueryModel,
-};
-
-pub use sqlxo_macros::{
-	bind,
-	context,
-	Query,
-	WebQuery,
-};
+pub use sqlxo_macros::*;
+pub use sqlxo_traits::*;
 
 pub mod prelude {
 	pub use super::{
