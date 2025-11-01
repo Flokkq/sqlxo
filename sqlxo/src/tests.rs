@@ -70,13 +70,14 @@ pub struct Item {
 #[bind(Item)]
 #[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]
 pub struct ItemDto {
-	id:          Uuid,
-	name:        String,
-	description: String,
-	price:       f32,
-	amount:      i32,
-	active:      bool,
-	due_date:    sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
+	id:             Uuid,
+	#[sqlxo(field = "name")]
+	different_name: String,
+	description:    String,
+	price:          f32,
+	amount:         i32,
+	active:         bool,
+	due_date:       sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
 }
 
 #[allow(dead_code)]
@@ -164,7 +165,7 @@ fn deserialize_itemdto_sqlxo_json() {
 	let json: Value = json!({
 		"filter": {
 			"and": [
-				{ "name": { "like": "%Sternlampe%" } },
+				{ "different_name": { "like": "%Sternlampe%" } },
 				{ "or": [
 					{ "price": { "gt": 18.00 } },
 					{ "description": { "neq": "von Hohlweg" } }
@@ -172,7 +173,7 @@ fn deserialize_itemdto_sqlxo_json() {
 			]
 		},
 		"sort": [
-			{ "name": "asc" },
+			{ "different_name": "asc" },
 			{ "description": "desc" }
 		],
 		"page": { "pageSize": 10, "pageNo": 1 }
@@ -191,7 +192,7 @@ fn query_builder_from_dto_filter() {
 	let json: Value = json!({
 		"filter": {
 			"and": [
-				{ "name": { "like": "%Sternlampe%" } },
+				{ "different_name": { "like": "%Sternlampe%" } },
 				{ "or": [
 					{ "price": { "gt": 18.00 } },
 					{ "description": { "neq": "von Hohlweg" } }
@@ -199,7 +200,7 @@ fn query_builder_from_dto_filter() {
 			]
 		},
 		"sort": [
-			{ "name": "asc" },
+			{ "different_name": "asc" },
 			{ "description": "desc" }
 		],
 		"page": { "pageSize": 10, "pageNo": 1 }

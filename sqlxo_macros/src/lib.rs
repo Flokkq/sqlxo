@@ -1018,6 +1018,72 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		let fname_pascal = fname_snake.to_pascal_case();
 		let ty = &field.ty;
 
+		let mut target_snake = fname_snake.clone();
+		for attr in &field.attrs {
+			if attr.path.is_ident("sqlxo") {
+				let meta = match attr.parse_meta() {
+					Ok(m) => m,
+					Err(_) => {
+						return Error::new_spanned(
+							attr,
+							"invalid #[sqlxo] attribute",
+						)
+						.to_compile_error()
+						.into();
+					}
+				};
+				let list = match meta {
+					Meta::List(list) => list,
+					_ => {
+						return Error::new_spanned(
+							attr,
+							r#"expected #[sqlxo(field = "...")]"#,
+						)
+						.to_compile_error()
+						.into();
+					}
+				};
+				for nested in list.nested {
+					match nested {
+						NestedMeta::Meta(Meta::NameValue(nv))
+							if nv.path.is_ident("field") =>
+						{
+							match nv.lit {
+								Lit::Str(ref s) => {
+									target_snake = s.value();
+								}
+								other => {
+									return Error::new_spanned(
+										other,
+										r#"expected string literal: #[sqlxo(field = "item_name")]"#,
+									)
+									.to_compile_error()
+									.into();
+								}
+							}
+						}
+						NestedMeta::Meta(Meta::NameValue(nv)) => {
+							return Error::new_spanned(
+								nv,
+								"unknown key in #[sqlxo]",
+							)
+							.to_compile_error()
+							.into();
+						}
+						other => {
+							return Error::new_spanned(
+								other,
+								"expected name-value pair",
+							)
+							.to_compile_error()
+							.into();
+						}
+					}
+				}
+			}
+		}
+		let target_pascal = target_snake.to_pascal_case();
+
 		let leaf_wrap_ident =
 			format_ident!("{}Leaf{}", dto_ident, fname_pascal);
 		let sort_wrap_ident =
@@ -1027,23 +1093,23 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		let leaf_variant_ident = format_ident!("{}", fname_pascal);
 		let sort_variant_ident = format_ident!("{}", fname_pascal);
 
-		let q_eq = format_ident!("{}Eq", fname_pascal);
-		let q_neq = format_ident!("{}Neq", fname_pascal);
-		let q_like = format_ident!("{}Like", fname_pascal);
-		let q_not_like = format_ident!("{}NotLike", fname_pascal);
-		let q_is_null = format_ident!("{}IsNull", fname_pascal);
-		let q_is_notnull = format_ident!("{}IsNotNull", fname_pascal);
-		let q_gt = format_ident!("{}Gt", fname_pascal);
-		let q_gte = format_ident!("{}Gte", fname_pascal);
-		let q_lt = format_ident!("{}Lt", fname_pascal);
-		let q_lte = format_ident!("{}Lte", fname_pascal);
-		let q_between = format_ident!("{}Between", fname_pascal);
-		let q_not_between = format_ident!("{}NotBetween", fname_pascal);
-		let q_is_true = format_ident!("{}IsTrue", fname_pascal);
-		let q_is_false = format_ident!("{}IsFalse", fname_pascal);
+		let q_eq = format_ident!("{}Eq", target_pascal);
+		let q_neq = format_ident!("{}Neq", target_pascal);
+		let q_like = format_ident!("{}Like", target_pascal);
+		let q_not_like = format_ident!("{}NotLike", target_pascal);
+		let q_is_null = format_ident!("{}IsNull", target_pascal);
+		let q_is_notnull = format_ident!("{}IsNotNull", target_pascal);
+		let q_gt = format_ident!("{}Gt", target_pascal);
+		let q_gte = format_ident!("{}Gte", target_pascal);
+		let q_lt = format_ident!("{}Lt", target_pascal);
+		let q_lte = format_ident!("{}Lte", target_pascal);
+		let q_between = format_ident!("{}Between", target_pascal);
+		let q_not_between = format_ident!("{}NotBetween", target_pascal);
+		let q_is_true = format_ident!("{}IsTrue", target_pascal);
+		let q_is_false = format_ident!("{}IsFalse", target_pascal);
 
-		let s_by_asc = format_ident!("By{}Asc", fname_pascal);
-		let s_by_desc = format_ident!("By{}Desc", fname_pascal);
+		let s_by_asc = format_ident!("By{}Asc", target_pascal);
+		let s_by_desc = format_ident!("By{}Desc", target_pascal);
 
 		match classify_type(ty) {
 			Kind::String => {
