@@ -1,5 +1,5 @@
 error: expected #[sqlxo(table_name = "...")]
- --> tests/try/err/wrong_form.rs:5:1
+ --> tests/filter/try/err/wrong_form.rs:5:1
   |
 5 | #[sqlxo = "oops"]
   | ^^^^^^^^^^^^^^^^^

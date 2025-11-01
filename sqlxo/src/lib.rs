@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
+extern crate self as sqlxo;
 
 pub use sqlxo_traits::{
+	Bind,
 	DtoExpression,
 	DtoFilter,
 	DtoPage,
@@ -17,6 +19,7 @@ pub use sqlxo_traits::{
 };
 
 pub use sqlxo_macros::{
+	bind,
 	context,
 	Query,
 	WebQuery,

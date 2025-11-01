@@ -1,12 +1,13 @@
-use crate::ItemQuery::*;
-use crate::ItemSort::*;
-use sqlx::FromRow;
-use sqlxo_macros::Query;
 use sqlxo_traits::Filterable;
 use sqlxo_traits::QueryContext;
 use sqlxo_traits::Sortable;
 use sqlxo_traits::SqlWrite;
 use uuid::Uuid;
+
+use crate::helpers::Item;
+use crate::helpers::ItemQuery;
+use crate::helpers::ItemQuery::*;
+use crate::helpers::ItemSort::*;
 
 #[derive(Default, Debug)]
 pub struct DummyWriter {
@@ -38,19 +39,6 @@ fn assert_write(q: ItemQuery, expected_sql: &str, expcted_binds: usize) {
 
 	assert_eq!(w.sql, expected_sql, "sql missmatch");
 	assert_eq!(w.binds, expcted_binds, "bind count missmatch");
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, FromRow, Query)]
-#[sqlxo(table_name = "item")]
-pub struct Item {
-	id:          Uuid,
-	name:        String,
-	description: String,
-	price:       f32,
-	amount:      i32,
-	active:      bool,
-	due_date:    chrono::DateTime<chrono::Utc>,
 }
 
 #[test]

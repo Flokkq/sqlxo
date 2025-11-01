@@ -4,7 +4,11 @@ use heck::{
 	ToPascalCase,
 	ToSnakeCase,
 };
-use proc_macro::TokenStream;
+use proc_macro::{
+	Span,
+	TokenStream,
+};
+use proc_macro_crate::FoundCrate;
 use quote::{
 	format_ident,
 	quote,
@@ -31,6 +35,17 @@ enum Kind {
 	DateTime,
 	Date,
 	Time,
+}
+
+fn sqlxo_root() -> proc_macro2::TokenStream {
+	match proc_macro_crate::crate_name("sqlxo") {
+		Ok(FoundCrate::Itself) => quote!(sqlxo),
+		Ok(FoundCrate::Name(name)) => {
+			let ident = syn::Ident::new(&name, Span::call_site().into());
+			quote!(#ident)
+		}
+		Err(_) => quote!(sqlxo),
+	}
 }
 
 fn classify_type(ty: &syn::Type) -> Kind {
@@ -172,6 +187,7 @@ fn build_join_codegen(
 	Vec<proc_macro2::TokenStream>,
 	Vec<proc_macro2::TokenStream>,
 ) {
+	let root = sqlxo_root();
 	let mut variants = Vec::new();
 	let mut to_sql = Vec::new();
 	let mut kind_arms = Vec::new();
@@ -197,7 +213,7 @@ fn build_join_codegen(
 			fk.fk_field_pascal
 		);
 
-		variants.push(quote! { #var(sqlxo_traits::JoinKind) });
+		variants.push(quote! { #var(#root::JoinKind) });
 
 		let right_table = fk.right_table.clone();
 		let on_left = format!(r#""{}"."{}""#, left_table, fk.fk_field_snake);
@@ -205,9 +221,9 @@ fn build_join_codegen(
 
 		to_sql.push(quote! {
 			Self::#var(kind) => match kind {
-				sqlxo_traits::JoinKind::Inner =>
+				#root::JoinKind::Inner =>
 					format!(r#" INNER JOIN {} ON {} = {}"#, #right_table, #on_left, #on_right),
-				sqlxo_traits::JoinKind::Left  =>
+				#root::JoinKind::Left  =>
 					format!(r#" LEFT JOIN {} ON {} = {}"#,  #right_table, #on_left, #on_right),
 			}
 		});
@@ -221,6 +237,7 @@ fn build_join_codegen(
 #[proc_macro_derive(Query, attributes(sqlxo, primary_key, foreign_key))]
 pub fn derive_query(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
+	let root = sqlxo_root();
 
 	if !matches!(input.vis, Visibility::Public(_)) {
 		return Error::new_spanned(
@@ -619,7 +636,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 	let out = quote! {
 
-		impl sqlxo_traits::QueryContext for #struct_ident {
+		impl #root::QueryContext for #struct_ident {
 			const TABLE: &'static str = #table_name;
 
 			type Model = #struct_ident;
@@ -647,14 +664,14 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		}
 
 
-		impl sqlxo_traits::SqlJoin for #join_ident {
+		impl #root::SqlJoin for #join_ident {
 			fn to_sql(&self) -> String {
 				match self {
 					#(#join_to_sql_arms),*
 				}
 			}
 
-			fn kind(&self) -> sqlxo_traits::JoinKind {
+			fn kind(&self) -> #root::JoinKind {
 				match self {
 					#(#join_kind_arms),*
 				}
@@ -662,10 +679,10 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		}
 
 
-		impl sqlxo_traits::Filterable for #query_ident {
+		impl #root::Filterable for #query_ident {
 			type Entity = #struct_ident;
 
-			fn write<W: sqlxo_traits::SqlWrite>(&self, w: &mut W) {
+			fn write<W: #root::SqlWrite>(&self, w: &mut W) {
 				match self {
 					#(#write_arms),*
 				}
@@ -673,7 +690,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		}
 
 
-		impl sqlxo_traits::Sortable for #sort_ident {
+		impl #root::Sortable for #sort_ident {
 			type Entity = #struct_ident;
 
 			fn sort_clause(&self) -> String {
@@ -692,6 +709,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 pub fn context(input: TokenStream) -> TokenStream {
 	let parser = syn::punctuated::Punctuated::<syn::Type, syn::Token![,]>::parse_terminated;
 	let args = parse_macro_input!(input with parser);
+	let root = sqlxo_root();
 
 	if args.is_empty() {
 		return Error::new(
@@ -726,20 +744,20 @@ pub fn context(input: TokenStream) -> TokenStream {
 
 			pub struct Ctx;
 
-			impl sqlxo_traits::QueryContext for Ctx {
-				const TABLE: &'static str = <#base_ty as sqlxo_traits::QueryContext>::TABLE;
+			impl #root::QueryContext for Ctx {
+				const TABLE: &'static str = <#base_ty as #root::QueryContext>::TABLE;
 
-				type Model = <#base_ty as sqlxo_traits::QueryContext>::Model;
-				type Query = <#base_ty as sqlxo_traits::QueryContext>::Query;
-				type Sort  = <#base_ty as sqlxo_traits::QueryContext>::Sort;
-				type Join  = <#base_ty as sqlxo_traits::QueryContext>::Join;
+				type Model = <#base_ty as #root::QueryContext>::Model;
+				type Query = <#base_ty as #root::QueryContext>::Query;
+				type Sort  = <#base_ty as #root::QueryContext>::Sort;
+				type Join  = <#base_ty as #root::QueryContext>::Join;
 			}
 
-			pub type Where = <#base_ty as sqlxo_traits::QueryContext>::Query;
-			pub type Sort  = <#base_ty as sqlxo_traits::QueryContext>::Sort;
-			pub type Join  = <#base_ty as sqlxo_traits::QueryContext>::Join;
+			pub type Where = <#base_ty as #root::QueryContext>::Query;
+			pub type Sort  = <#base_ty as #root::QueryContext>::Sort;
+			pub type Join  = <#base_ty as #root::QueryContext>::Join;
 
-			pub use sqlxo_traits::JoinKind;
+			pub use #root::JoinKind;
 		}
 
 	};
@@ -750,6 +768,7 @@ pub fn context(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(WebQuery, attributes(sqlxo, primary_key, foreign_key))]
 pub fn derive_webquery(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
+	let root = sqlxo_root();
 
 	if !matches!(input.vis, Visibility::Public(_)) {
 		return Error::new_spanned(
@@ -913,7 +932,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		sort_structs.push(quote! {
             #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
             pub struct #sort_wrap_ident {
-                pub #fname_ident: ::sqlxo_traits::DtoSortDir,
+                pub #fname_ident: #root::DtoSortDir,
             }
         });
 
@@ -947,7 +966,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		}
 
 
-		impl ::sqlxo_traits::WebQueryModel for #struct_ident {
+		impl #root::WebQueryModel for #struct_ident {
 			type Leaf      = #leaf_ident;
 			type SortField = #sort_field_ident;
 		}
@@ -960,6 +979,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let dto = parse_macro_input!(item as DeriveInput);
+	let root = sqlxo_root();
 
 	let entity_ty: syn::Type = {
 		let s = attr.to_string();
@@ -1030,12 +1050,12 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(v.clone()),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(v.clone()),
-                            #op_ident::Like{like: v}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_like(v.clone()),
-                            #op_ident::NotLike{not_like: v} => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_like(v.clone()),
-                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
-                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(v.clone()),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(v.clone()),
+                            #op_ident::Like{like: v}        => <#entity_ty as #root::QueryContext>::Query::#q_like(v.clone()),
+                            #op_ident::NotLike{not_like: v} => <#entity_ty as #root::QueryContext>::Query::#q_not_like(v.clone()),
+                            #op_ident::IsNull{..}           => <#entity_ty as #root::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as #root::QueryContext>::Query::#q_is_notnull,
                         }
                     }
                 });
@@ -1044,8 +1064,8 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::IsTrue{..}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_true,
-                            #op_ident::IsFalse{..} => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_false,
+                            #op_ident::IsTrue{..}  => <#entity_ty as #root::QueryContext>::Query::#q_is_true,
+                            #op_ident::IsFalse{..} => <#entity_ty as #root::QueryContext>::Query::#q_is_false,
                         }
                     }
                 });
@@ -1054,15 +1074,15 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
-                            #op_ident::Gt{gt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gt(*v),
-                            #op_ident::Gte{gte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gte(*v),
-                            #op_ident::Lt{lt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lt(*v),
-                            #op_ident::Lte{lte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lte(*v),
-                            #op_ident::Between{between: v}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_gt(*v),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_gte(*v),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_lt(*v),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_lte(*v),
+                            #op_ident::Between{between: v}  => <#entity_ty as #root::QueryContext>::Query::#q_between(v[0], v[1]),
                             #op_ident::NotBetween{not_between: v}
-                                                            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_between(v[0], v[1]),
+                                                            => <#entity_ty as #root::QueryContext>::Query::#q_not_between(v[0], v[1]),
                         }
                     }
                 });
@@ -1071,10 +1091,10 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
-                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
-                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::IsNull{..}           => <#entity_ty as #root::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as #root::QueryContext>::Query::#q_is_notnull,
                         }
                     }
                 });
@@ -1083,18 +1103,18 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::On{on: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
-                            #op_ident::Gt{gt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gt(*v),
-                            #op_ident::Gte{gte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gte(*v),
-                            #op_ident::Lt{lt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lt(*v),
-                            #op_ident::Lte{lte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lte(*v),
-                            #op_ident::Between{between: v}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::On{on: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_gt(*v),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_gte(*v),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_lt(*v),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_lte(*v),
+                            #op_ident::Between{between: v}  => <#entity_ty as #root::QueryContext>::Query::#q_between(v[0], v[1]),
                             #op_ident::NotBetween{not_between: v}
-                                                            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_between(v[0], v[1]),
-                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
-                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                                                            => <#entity_ty as #root::QueryContext>::Query::#q_not_between(v[0], v[1]),
+                            #op_ident::IsNull{..}           => <#entity_ty as #root::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as #root::QueryContext>::Query::#q_is_notnull,
                         }
                     }
                 });
@@ -1103,17 +1123,17 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 				leaf_arms.push(quote! {
                     #leaf_ident::#leaf_variant_ident(inner @ #leaf_wrap_ident { .. }) => {
                         match &inner.#fname_ident {
-                            #op_ident::Eq{eq: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_eq(*v),
-                            #op_ident::Neq{neq: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_neq(*v),
-                            #op_ident::Gt{gt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gt(*v),
-                            #op_ident::Gte{gte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_gte(*v),
-                            #op_ident::Lt{lt: v}            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lt(*v),
-                            #op_ident::Lte{lte: v}          => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_lte(*v),
-                            #op_ident::Between{between: v}  => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_between(v[0], v[1]),
+                            #op_ident::Eq{eq: v}            => <#entity_ty as #root::QueryContext>::Query::#q_eq(*v),
+                            #op_ident::Neq{neq: v}          => <#entity_ty as #root::QueryContext>::Query::#q_neq(*v),
+                            #op_ident::Gt{gt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_gt(*v),
+                            #op_ident::Gte{gte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_gte(*v),
+                            #op_ident::Lt{lt: v}            => <#entity_ty as #root::QueryContext>::Query::#q_lt(*v),
+                            #op_ident::Lte{lte: v}          => <#entity_ty as #root::QueryContext>::Query::#q_lte(*v),
+                            #op_ident::Between{between: v}  => <#entity_ty as #root::QueryContext>::Query::#q_between(v[0], v[1]),
                             #op_ident::NotBetween{not_between: v}
-                                                            => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_not_between(v[0], v[1]),
-                            #op_ident::IsNull{..}           => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_null,
-                            #op_ident::IsNotNull{..}        => <#entity_ty as sqlxo_traits::QueryContext>::Query::#q_is_notnull,
+                                                            => <#entity_ty as #root::QueryContext>::Query::#q_not_between(v[0], v[1]),
+                            #op_ident::IsNull{..}           => <#entity_ty as #root::QueryContext>::Query::#q_is_null,
+                            #op_ident::IsNotNull{..}        => <#entity_ty as #root::QueryContext>::Query::#q_is_notnull,
                         }
                     }
                 });
@@ -1123,8 +1143,8 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		sort_arms.push(quote! {
             sqlxo_traits::GenericDtoSort(#sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. })) => {
                 match inner.#fname_ident {
-                    sqlxo_traits::DtoSortDir::Asc  => <#entity_ty as sqlxo_traits::QueryContext>::Sort::#s_by_asc,
-                    sqlxo_traits::DtoSortDir::Desc => <#entity_ty as sqlxo_traits::QueryContext>::Sort::#s_by_desc,
+                    #root::DtoSortDir::Asc  => <#entity_ty as #root::QueryContext>::Sort::#s_by_asc,
+                    #root::DtoSortDir::Desc => <#entity_ty as #root::QueryContext>::Sort::#s_by_desc,
                 }
             }
         });
@@ -1133,18 +1153,18 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let out = quote! {
 		#dto
 
-		impl sqlxo_traits::Bind<#entity_ty> for #dto_ident {
+		impl #root::Bind<#entity_ty> for #dto_ident {
 			fn map_leaf(
-				leaf: &<#dto_ident as sqlxo_traits::WebQueryModel>::Leaf
-			) -> <#entity_ty as sqlxo_traits::QueryContext>::Query {
+				leaf: &<#dto_ident as #root::WebQueryModel>::Leaf
+			) -> <#entity_ty as #root::QueryContext>::Query {
 				match leaf {
 					#(#leaf_arms),* ,
 				}
 			}
 
 			fn map_sort_token(
-				sort: &sqlxo_traits::DtoSort<Self>
-			) -> <#entity_ty as sqlxo_traits::QueryContext>::Sort {
+				sort: &#root::DtoSort<Self>
+			) -> <#entity_ty as #root::QueryContext>::Sort {
 				match sort {
 					#(#sort_arms),* ,
 				}

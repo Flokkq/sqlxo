@@ -1,5 +1,10 @@
 #![cfg(test)]
 
+use crate::{
+	bind,
+	Query,
+	WebQuery,
+};
 use claims::assert_some;
 use serde::{
 	Deserialize,
@@ -10,11 +15,6 @@ use serde_json::{
 	Value,
 };
 use sqlx::FromRow;
-use sqlxo_macros::{
-	bind,
-	Query,
-	WebQuery,
-};
 use sqlxo_traits::{
 	DtoFilter,
 	JoinKind,

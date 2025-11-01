@@ -1,5 +1,5 @@
 error: `Query` requires a `pub` struct
- --> tests/try/err/not_public.rs:4:33
+ --> tests/filter/try/err/not_public.rs:4:33
   |
 4 | #[derive(Debug, Clone, FromRow, Query)]
   |                                 ^^^^^
