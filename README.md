@@ -4,12 +4,25 @@
 
 Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums from the `Query` derive macro.
 
-> [!NOTE]
-> I'm sorry for the broken version and version skips. I'm working on it
+> [!IMPORTANT]
+> This crate is still under development. Currently `sqlxo` does not follow SemVer and can have broken releases or skip versions, due to trouble in the release workflow.
+> Once `sqlxo` hits v1.0.0 it will be considered stable and follow SemVer
 
-## Example
+sqlxo supports basic fetures of an ORM and RESTful queries that get converted into databse queries. Both features are still early in development and lack imortant features
+- aggregations
+- joins
+- permissions
+- caching
+- currently only supports READ operations
+
+## Examples
+
+### ORM
 
 The `Query` derive macro generates all querying variants and sort fields for your model.
+
+<details>
+    <summary>Click to expand</summary>
 
 ```rust
 use sqlxo::{Query, QueryBuilder, Pagination, and, or, order_by};
@@ -66,6 +79,69 @@ WHERE (name = $1 AND (price < $2 OR amount = $3))
 ORDER BY name ASC, price DESC
 LIMIT $4 OFFSET $5
 ```
+
+</details>
+
+### RESTful queries
+
+
+The `WebQuery` derive macro in combination with the `#[bind]` attribute generates all querying variants and sort fields with mapping for your model.
+
+<details>
+    <summary>Click to expand</summary>
+
+```rust
+#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+pub struct Item {
+	#[primary_key]
+	id:          Uuid,
+	name:        String,
+	price:       f32,
+}
+
+#[allow(dead_code)]
+#[bind(Item)]
+#[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]
+pub struct ItemDto {
+	id:             Uuid,
+	#[sqlxo(field = "name")]
+	different_name: String,
+	price:          f32,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), sqlx::Error> {
+    let pool: PgPool = PgPool::connect("postgres://...").await?;
+
+	let json: value = json!({ "filter": {
+			"and": [
+				{ "different_name": { "like": "%Sternlampe%" } },
+				{ "or": [
+					{ "price": { "gt": 18.00 } },
+					{ "description": { "neq": "von Hohlweg" } }
+				]}
+			]
+		},
+		"sort": [
+			{ "different_name": "asc" },
+			{ "description": "desc" }
+		],
+		"page": { "pageSize": 10, "pageNo": 1 }
+	});
+
+	let filter: DtoFilter<ItemDto> = serde_json::from_value(json).unwrap();
+
+	let items: Vec<Item> = 
+        QueryBuilder::<Item>::from_dto::<ItemDto>(&filter)
+		.build()
+        .fetch_all(&pool)
+        .await?;
+
+    println!("Found {} items", items.len());
+}
+```
+
+</details>
 
 ## Support
 
