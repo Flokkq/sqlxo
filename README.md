@@ -6,9 +6,9 @@ Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums fr
 
 > [!IMPORTANT]
 > This crate is still under development. Currently `sqlxo` does not follow SemVer and can have broken releases or skip versions, due to trouble in the release workflow.
-> Once `sqlxo` hits v1.0.0 it will be considered stable and follow SemVer
+> Once `sqlxo` hits v1.0.0 it will be considered stable and follow SemVer.
 
-sqlxo supports basic fetures of an ORM and RESTful queries that get converted into databse queries. Both features are still early in development and lack imortant features
+sqlxo supports basic features of an ORM and RESTful queries that get converted into database queries. Both features are still early in development and lack important features
 - aggregations
 - joins
 - permissions
@@ -85,7 +85,7 @@ LIMIT $4 OFFSET $5
 ### RESTful queries
 
 
-The `WebQuery` derive macro in combination with the `#[bind]` attribute generates all querying variants and sort fields with mapping for your model.
+The `WebQuery` derive macro in combination with the `#[bind]` attribute generates all querying variants and sort fields with mapping for your model. `sqlxo` ensures that only operations and queries the domain supports are serialized and sent to the db.
 
 <details>
     <summary>Click to expand</summary>
@@ -115,16 +115,16 @@ async fn main() -> Result<(), sqlx::Error> {
 
 	let json: value = json!({ "filter": {
 			"and": [
-				{ "different_name": { "like": "%Sternlampe%" } },
+				{ "id": { "eq": "ce3cd6cc-66a7-4c72-9ad5-6e3dbae2fa02" } },
 				{ "or": [
 					{ "price": { "gt": 18.00 } },
-					{ "description": { "neq": "von Hohlweg" } }
+					{ "different_name": { "like": "%bolt%" } }
 				]}
 			]
 		},
 		"sort": [
 			{ "different_name": "asc" },
-			{ "description": "desc" }
+			{ "price": "desc" }
 		],
 		"page": { "pageSize": 10, "pageNo": 1 }
 	});
@@ -145,7 +145,7 @@ async fn main() -> Result<(), sqlx::Error> {
 
 ## Support
 
-currently postgres only
+postgres is the only supported database. After sqlxo is stable more databases supported by slqx may follow. 
 
 ## Contributing
 
