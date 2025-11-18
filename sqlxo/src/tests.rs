@@ -224,3 +224,29 @@ fn query_builder_from_dto_filter() {
 		.normalize()
 	);
 }
+
+#[test]
+fn dto_filter_combined_with_inline_filter() {
+	let json: Value = json!({
+		"filter": {
+			 "different_name": { "like": "%Sternlampe%" }
+		},
+		"sort": null,
+		"page": null,
+	});
+
+	let f: DtoFilter<ItemDto> =
+		serde_json::from_value(json).expect("invalid ItemDtoFilter");
+
+	let plan: QueryPlan<Item> = QueryBuilder::<Item>::from_dto::<ItemDto>(&f)
+		.r#where(and![ItemQuery::NameIsNull, ItemQuery::AmountEq(1000)])
+		.build();
+
+	assert_eq!(
+		plan.sql(BuildType::Raw).trim_start().normalize(),
+		r#"
+        WHERE (name LIKE $1 AND (name IS NULL AND amount = $2))
+    "#
+		.normalize()
+	);
+}

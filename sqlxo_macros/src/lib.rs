@@ -700,6 +700,14 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			}
 		}
 
+		impl ::std::iter::IntoIterator for #sort_ident {
+			type Item = #sort_ident;
+			type IntoIter = ::std::iter::Once<#sort_ident>;
+
+			fn into_iter(self) -> Self::IntoIter {
+				::std::iter::once(self)
+			}
+		}
 	};
 
 	out.into()

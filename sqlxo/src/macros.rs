@@ -18,12 +18,16 @@ macro_rules! or {
 
 #[macro_export]
 macro_rules! order_by {
-    ( $( $e:expr ),+ $(,)? ) => {
-        < $crate::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>> >
-            ::from(vec![ $( $e ),+ ])
-    };
+    ( $( $e:expr ),+ $(,)? ) => {{
+        let mut v = ::std::vec::Vec::new();
+        $(
+            v.extend($e.into_iter());
+        )+
+        <$crate::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>>>
+            ::from(v)
+    }};
     () => {
-        < $crate::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>> >
+        <$crate::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>>>
             ::from(::std::vec::Vec::new())
     };
 }

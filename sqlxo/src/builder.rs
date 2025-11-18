@@ -17,6 +17,10 @@ use crate::head::{
 use crate::pagination::Pagination;
 use crate::sort::SortOrder;
 use crate::writer::SqlWriter;
+use crate::{
+	and,
+	order_by,
+};
 
 pub struct QueryBuilder<'a, C: QueryContext> {
 	pub(crate) table:      &'a str,
@@ -41,21 +45,29 @@ where
 	}
 
 	pub fn join(mut self, j: C::Join) -> Self {
-		if self.joins.is_none() {
-			self.joins = Some(vec![]);
-		}
+		match &mut self.joins {
+			Some(existing) => existing.push(j),
+			None => self.joins = Some(vec![]),
+		};
 
-		self.joins.as_mut().unwrap().push(j);
 		self
 	}
 
 	pub fn r#where(mut self, e: Expression<C::Query>) -> Self {
-		self.where_expr = Some(e);
+		match self.where_expr {
+			Some(existing) => self.where_expr = Some(and![existing, e]),
+			None => self.where_expr = Some(e),
+		};
+
 		self
 	}
 
 	pub fn order_by(mut self, s: SortOrder<C::Sort>) -> Self {
-		self.sort_expr = Some(s);
+		match self.sort_expr {
+			Some(existing) => self.sort_expr = Some(order_by![existing, s]),
+			None => self.sort_expr = Some(s),
+		}
+
 		self
 	}
 

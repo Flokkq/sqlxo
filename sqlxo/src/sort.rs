@@ -26,3 +26,18 @@ impl<T: Sortable> From<Vec<T>> for SortOrder<T> {
 		Self(v)
 	}
 }
+
+impl<T: Sortable> From<SortOrder<T>> for Vec<T> {
+	fn from(value: SortOrder<T>) -> Self {
+		value.0
+	}
+}
+
+impl<T: Sortable> std::iter::IntoIterator for SortOrder<T> {
+	type Item = T;
+	type IntoIter = ::std::vec::IntoIter<T>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.into_iter()
+	}
+}
