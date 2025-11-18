@@ -59,7 +59,7 @@ pub struct GenericDtoFilter<Q, S> {
 	#[schema(no_recursion)]
 	pub filter: Option<GenericDtoExpression<Q>>,
 	#[schema(no_recursion)]
-	pub sort:   Vec<GenericDtoSort<S>>,
+	pub sort:   Option<Vec<GenericDtoSort<S>>>,
 	pub page:   Option<DtoPage>,
 }
 

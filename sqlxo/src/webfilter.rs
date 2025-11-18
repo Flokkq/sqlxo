@@ -33,7 +33,6 @@ impl<'a, C> QueryBuilder<'a, C>
 where
 	C: QueryContext,
 {
-	/// Baut einen QueryBuilder aus einem DtoFilter.
 	pub fn from_dto<D>(dto: &DtoFilter<D>) -> Self
 	where
 		D: WebQueryModel + Bind<C>,
@@ -45,12 +44,15 @@ where
 			qb = qb.r#where(expr);
 		}
 
-		if !dto.sort.is_empty() {
+		if dto.sort.as_ref().is_some_and(|s| s.is_empty()) {
 			let sorts: Vec<C::Sort> = dto
 				.sort
+				.clone()
+				.unwrap_or_default()
 				.iter()
 				.map(<D as Bind<C>>::map_sort_token)
 				.collect();
+
 			qb = qb.order_by(SortOrder::from(sorts));
 		}
 
