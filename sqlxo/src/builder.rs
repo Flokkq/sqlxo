@@ -47,7 +47,7 @@ where
 	pub fn join(mut self, j: C::Join) -> Self {
 		match &mut self.joins {
 			Some(existing) => existing.push(j),
-			None => self.joins = Some(vec![]),
+			None => self.joins = Some(vec![j]),
 		};
 
 		self

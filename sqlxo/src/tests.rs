@@ -240,12 +240,13 @@ fn dto_filter_combined_with_inline_filter() {
 
 	let plan: QueryPlan<Item> = QueryBuilder::<Item>::from_dto::<ItemDto>(&f)
 		.r#where(and![ItemQuery::NameIsNull, ItemQuery::AmountEq(1000)])
+		.order_by(order_by![ItemSort::ByNameAsc])
 		.build();
 
 	assert_eq!(
 		plan.sql(BuildType::Raw).trim_start().normalize(),
 		r#"
-        WHERE (name LIKE $1 AND (name IS NULL AND amount = $2))
+        WHERE (name LIKE $1 AND (name IS NULL AND amount = $2)) ORDER BY name ASC
     "#
 		.normalize()
 	);

@@ -44,7 +44,7 @@ where
 			qb = qb.r#where(expr);
 		}
 
-		if dto.sort.as_ref().is_some_and(|s| s.is_empty()) {
+		if dto.sort.as_ref().is_some_and(|s| !s.is_empty()) {
 			let sorts: Vec<C::Sort> = dto
 				.sort
 				.clone()
