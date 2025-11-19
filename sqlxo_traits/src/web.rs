@@ -67,15 +67,17 @@ impl Default for DtoPage {
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct GenericDtoFilter<Q, S>
 where
 	Q: PartialSchema + ToSchema,
 	S: PartialSchema + ToSchema,
 {
-	#[schema(no_recursion)]
+	#[schema(no_recursion, nullable)]
 	pub filter: Option<GenericDtoExpression<Q>>,
-	#[schema(no_recursion)]
+	#[schema(no_recursion, nullable)]
 	pub sort:   Option<Vec<GenericDtoSort<S>>>,
+	#[schema(nullable)]
 	pub page:   Option<DtoPage>,
 }
 
