@@ -53,6 +53,15 @@ pub struct DtoPage {
 	pub page_no:   u32,
 }
 
+impl Default for DtoPage {
+	fn default() -> Self {
+		Self {
+			page_size: u32::MAX,
+			page_no:   0,
+		}
+	}
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 #[schema(bound = "Q: ToSchema, S: ToSchema")]
 pub struct GenericDtoFilter<Q, S> {
