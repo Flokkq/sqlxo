@@ -2,7 +2,11 @@ use serde::{
 	Deserialize,
 	Serialize,
 };
-use utoipa::ToSchema;
+use utoipa::{
+	IntoParams,
+	PartialSchema,
+	ToSchema,
+};
 
 pub trait WebQueryModel {
 	type Leaf: ToSchema
@@ -62,9 +66,12 @@ impl Default for DtoPage {
 	}
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
-#[schema(bound = "Q: ToSchema, S: ToSchema")]
-pub struct GenericDtoFilter<Q, S> {
+#[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
+pub struct GenericDtoFilter<Q, S>
+where
+	Q: PartialSchema + ToSchema,
+	S: PartialSchema + ToSchema,
+{
 	#[schema(no_recursion)]
 	pub filter: Option<GenericDtoExpression<Q>>,
 	#[schema(no_recursion)]
