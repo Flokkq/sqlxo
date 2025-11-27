@@ -1,6 +1,26 @@
 # Changelog
 
 
+## [0.4.0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.3.4..v0.4.0) - 2025-11-27
+
+
+
+
+### 🚜 Refactoring
+
+- *(web)* Reverse dependencies of webfilters - ([5b1e1b8](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/5b1e1b8d7c6e4257cf93cb5fbe758d8ebf591e59))
+
+
+## [0.3.4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.3.3..v0.3.4) - 2025-11-19
+
+
+
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.3.4 - ([125c93d](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/125c93d8d2aab0769be9e9cd0ca94f7b3c8e9729))
+
+
 ## [0.3.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.3.2..v0.3.3) - 2025-11-19
 
 
