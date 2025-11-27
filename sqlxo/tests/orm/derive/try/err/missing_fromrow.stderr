@@ -1,5 +1,5 @@
 error[E0277]: the trait bound `for<'r> T: sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not satisfied
- --> tests/filter/try/err/missing_fromrow.rs:5:12
+ --> tests/orm/derive/try/err/missing_fromrow.rs:5:12
   |
 5 | pub struct T {
   |            ^ the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
@@ -22,7 +22,7 @@ note: required by a bound in `sqlxo::QueryContext::Model`
   |                 ^^^^^^^^^^ required by this bound in `QueryContext::Model`
 
 error[E0277]: the trait bound `for<'r> T: sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not satisfied
- --> tests/filter/try/err/missing_fromrow.rs:5:12
+ --> tests/orm/derive/try/err/missing_fromrow.rs:5:12
   |
 5 | pub struct T {
   |            ^ the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
@@ -45,7 +45,7 @@ note: required by a bound in `sqlxo::Filterable::Entity`
   |                  ^^^^^^^^^^ required by this bound in `Filterable::Entity`
 
 error[E0277]: the trait bound `for<'r> T: sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not satisfied
- --> tests/filter/try/err/missing_fromrow.rs:5:12
+ --> tests/orm/derive/try/err/missing_fromrow.rs:5:12
   |
 5 | pub struct T {
   |            ^ the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`

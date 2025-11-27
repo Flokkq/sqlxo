@@ -1,7 +1,23 @@
 use sqlxo_traits::Sortable;
 
+#[macro_export]
+macro_rules! order_by {
+    ( $( $e:expr ),+ $(,)? ) => {{
+        let mut v = ::std::vec::Vec::new();
+        $(
+            v.extend($e.into_iter());
+        )+
+        <$crate::blocks::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>>>
+            ::from(v)
+    }};
+    () => {
+        <$crate::blocks::SortOrder<_> as ::core::convert::From<::std::vec::Vec<_>>>
+            ::from(::std::vec::Vec::new())
+    };
+}
+
 #[derive(PartialEq, Debug, Clone)]
-pub struct SortOrder<T: Sortable>(pub(crate) Vec<T>);
+pub struct SortOrder<T: Sortable>(pub Vec<T>);
 
 impl<T> SortOrder<T>
 where

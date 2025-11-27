@@ -16,30 +16,14 @@ pub mod prelude {
 	};
 }
 
-mod builder;
-mod expression;
-mod head;
-mod macros;
-mod pagination;
-mod sort;
-mod web;
-mod writer;
+pub mod blocks;
+pub mod web;
 
+mod builder;
 pub use builder::{
 	QueryBuilder,
 	QueryPlan,
 };
-pub use expression::Expression;
-pub use head::{
-	AggregationType,
-	BuildType,
-	SelectType,
-	SqlHead,
-};
-pub use pagination::Pagination;
-pub use sort::SortOrder;
-pub use web::*;
-pub use writer::SqlWriter;
 
 #[cfg(test)]
 mod tests;

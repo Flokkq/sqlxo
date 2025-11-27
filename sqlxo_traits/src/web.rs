@@ -1,3 +1,4 @@
+use crate::QueryContext;
 use serde::{
 	Deserialize,
 	Serialize,
@@ -22,4 +23,20 @@ impl<T> WebSortField for T where
 pub trait WebQueryModel {
 	type Leaf: WebLeaf;
 	type SortField: WebSortField;
+}
+
+pub trait Bind<C>: WebQueryModel
+where
+	C: QueryContext,
+{
+	fn map_leaf(leaf: &<Self as WebQueryModel>::Leaf) -> C::Query;
+
+	fn map_sort_field(sort: &<Self as WebQueryModel>::SortField) -> C::Sort;
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, ToSchema, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum WebSortDirection {
+	Asc,
+	Desc,
 }

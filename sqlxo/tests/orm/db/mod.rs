@@ -5,9 +5,9 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::postgres::PgSslMode;
 use sqlx::PgPool;
 use sqlxo::and;
+use sqlxo::blocks::Pagination;
 use sqlxo::or;
 use sqlxo::order_by;
-use sqlxo::Pagination;
 use sqlxo::QueryBuilder;
 use uuid::Uuid;
 

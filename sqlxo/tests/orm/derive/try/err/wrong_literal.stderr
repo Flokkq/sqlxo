@@ -1,5 +1,5 @@
 error: expected string literal: #[sqlxo(table_name = "items")]
- --> tests/filter/try/err/wrong_literal.rs:5:22
+ --> tests/orm/derive/try/err/wrong_literal.rs:5:22
   |
 5 | #[sqlxo(table_name = 123)]
   |                      ^^^

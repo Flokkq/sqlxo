@@ -9,10 +9,20 @@ use sqlxo_traits::{
 	SqlJoin,
 };
 
-use crate::expression::Expression;
-use crate::head::SqlHead;
-use crate::pagination::Pagination;
-use crate::sort::SortOrder;
+mod expression;
+mod head;
+mod pagination;
+mod sort;
+
+pub use expression::Expression;
+pub use head::{
+	AggregationType,
+	BuildType,
+	SelectType,
+	SqlHead,
+};
+pub use pagination::Pagination;
+pub use sort::SortOrder;
 
 pub struct SqlWriter {
 	qb:             sqlx::QueryBuilder<'static, Postgres>,

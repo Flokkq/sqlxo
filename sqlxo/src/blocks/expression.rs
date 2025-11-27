@@ -1,8 +1,26 @@
-use crate::writer::SqlWriter;
+use crate::blocks::SqlWriter;
 use sqlxo_traits::{
 	Filterable,
 	SqlWrite,
 };
+
+#[macro_export]
+macro_rules! and {
+    ( $( $e:expr ),* $(,)? ) => {
+        $crate::blocks::Expression::And(vec![
+            $( $crate::blocks::Expression::from($e) ),*
+        ])
+    };
+}
+
+#[macro_export]
+macro_rules! or {
+    ( $( $e:expr ),* $(,)? ) => {
+        $crate::blocks::Expression::Or(vec![
+            $( $crate::blocks::Expression::from($e) ),*
+        ])
+    };
+}
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expression<T: Filterable> {

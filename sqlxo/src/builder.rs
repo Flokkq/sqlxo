@@ -8,17 +8,17 @@ use sqlxo_traits::{
 	Sortable,
 };
 
-use crate::expression::Expression;
-use crate::head::{
-	BuildType,
-	SelectType,
-	SqlHead,
-};
-use crate::pagination::Pagination;
-use crate::sort::SortOrder;
-use crate::writer::SqlWriter;
 use crate::{
 	and,
+	blocks::{
+		BuildType,
+		Expression,
+		Pagination,
+		SelectType,
+		SortOrder,
+		SqlHead,
+		SqlWriter,
+	},
 	order_by,
 };
 
@@ -140,6 +140,11 @@ where
 			.await
 	}
 
+	// pub async fn fetch_page<'e, E>(
+	//     &self,
+	//     exec: E,
+	// ) -> Result<>
+
 	pub async fn fetch_one<'e, E>(
 		&self,
 		exec: E,
@@ -166,7 +171,7 @@ where
 			.await
 	}
 
-	#[cfg(test)]
+	#[cfg(any(test, feature = "test-utils"))]
 	pub fn sql(&self, build: BuildType) -> String {
 		use sqlx::Execute;
 		self.to_query_builder(build).build().sql().to_string()

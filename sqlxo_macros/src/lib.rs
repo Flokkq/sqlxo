@@ -940,7 +940,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		sort_structs.push(quote! {
             #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
             pub struct #sort_wrap_ident {
-                pub #fname_ident: #root::DtoSortDir,
+                pub #fname_ident: #root::WebSortDirection,
             }
         });
 
@@ -1217,8 +1217,8 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		sort_arms.push(quote! {
             #sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. }) => {
                 match inner.#fname_ident {
-                    #root::DtoSortDir::Asc  => <#entity_ty as #root::QueryContext>::Sort::#s_by_asc,
-                    #root::DtoSortDir::Desc => <#entity_ty as #root::QueryContext>::Sort::#s_by_desc,
+                    #root::WebSortDirection::Asc  => <#entity_ty as #root::QueryContext>::Sort::#s_by_asc,
+                    #root::WebSortDirection::Desc => <#entity_ty as #root::QueryContext>::Sort::#s_by_desc,
                 }
             }
         });

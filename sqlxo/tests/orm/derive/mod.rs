@@ -9,6 +9,8 @@ use crate::helpers::ItemQuery;
 use crate::helpers::ItemQuery::*;
 use crate::helpers::ItemSort::*;
 
+mod trybuild;
+
 #[derive(Default, Debug)]
 pub struct DummyWriter {
 	sql:   String,

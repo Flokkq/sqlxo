@@ -1,5 +1,5 @@
 error: `Query` requires named fields
- --> tests/filter/try/err/unnamed_fields.rs:5:13
+ --> tests/orm/derive/try/err/unnamed_fields.rs:5:13
   |
 5 | pub struct T(String, i32);
   |             ^^^^^^^^^^^^^

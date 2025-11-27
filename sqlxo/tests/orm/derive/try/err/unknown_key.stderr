@@ -1,5 +1,5 @@
 error: unknown key in #[sqlxo]
- --> tests/filter/try/err/unknown_key.rs:5:9
+ --> tests/orm/derive/try/err/unknown_key.rs:5:9
   |
 5 | #[sqlxo(foo = "bar")]
   |         ^^^^^^^^^^^

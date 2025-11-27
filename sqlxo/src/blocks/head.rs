@@ -20,7 +20,7 @@ pub enum BuildType {
 	Select(SelectType),
 	Update,
 	Delete,
-	#[cfg(test)]
+	#[cfg(any(test, feature = "test-utils"))]
 	Raw,
 }
 
@@ -57,7 +57,7 @@ impl<'a> Display for SqlHead<'a> {
 			}
 			BuildType::Update => write!(f, "UPDATE {}", self.table),
 			BuildType::Delete => write!(f, "DELETE FROM {}", self.table),
-			#[cfg(test)]
+			#[cfg(any(test, feature = "test-utils"))]
 			BuildType::Raw => write!(f, ""),
 		}
 	}

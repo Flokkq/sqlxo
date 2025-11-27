@@ -11,6 +11,7 @@ description = { workspace = true }
 [features]
 default = []
 ignore-db-tests = []
+test-utils = []
 
 [dependencies]
 sqlxo_macros = { workspace = true }

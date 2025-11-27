@@ -7,7 +7,7 @@ use serde::{
 	Serialize,
 };
 use sqlxo::{
-	DtoFilter,
+	web::WebFilter,
 	WebQuery,
 };
 use utoipa::{
@@ -32,11 +32,11 @@ pub struct ItemDto {
 #[utoipa::path(
     post,
     path = "/items/sqlxo",
-    request_body = DtoFilter<ItemDto>,
+    request_body = WebFilter<ItemDto>,
     responses((status = 200, description = "Filtered items", body = [ItemDto])),
     tag = "items"
 )]
-fn sqlxo_items(_payload: DtoFilter<ItemDto>) -> Vec<ItemDto> {
+fn sqlxo_items(_payload: WebFilter<ItemDto>) -> Vec<ItemDto> {
 	Vec::new()
 }
 
@@ -51,13 +51,13 @@ fn sqlxo_items(_payload: DtoFilter<ItemDto>) -> Vec<ItemDto> {
             ItemDtoLeaf,
             ItemDtoSortField,
 
-            sqlxo::DtoSortDir,
-            sqlxo::DtoPage,
+            sqlxo::WebSortDirection,
+            sqlxo::web::WebPagination,
 
-            sqlxo::GenericDtoExpression<ItemDtoLeaf>,
-            sqlxo::GenericDtoSort<ItemDtoSortField>,
+            sqlxo::web::GenericWebExpression<ItemDtoLeaf>,
+            sqlxo::web::GenericWebSort<ItemDtoSortField>,
 
-            sqlxo::DtoFilter<ItemDto>
+            sqlxo::web::WebFilter<ItemDto>
         )
     ),
     tags((name = "items", description = "Filtering Items with WebQuery payload"))
