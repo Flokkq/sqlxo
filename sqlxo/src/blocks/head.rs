@@ -4,12 +4,15 @@ use std::fmt::{
 	Formatter,
 };
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SelectType {
 	Star,
 	Aggregation(AggregationType),
 	StarAndCount,
+	Exists,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AggregationType {
 	Max,
 	Min,
@@ -17,6 +20,7 @@ pub enum AggregationType {
 	Avg,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BuildType {
 	Select(SelectType),
 	Update,
@@ -62,6 +66,9 @@ impl<'a> Display for SqlHead<'a> {
 					"SELECT *, COUNT(*) OVER() AS total_count FROM {}",
 					self.table
 				)
+			}
+			BuildType::Select(SelectType::Exists) => {
+				write!(f, "SELECT EXISTS(SELECT 1 FROM {}", self.table)
 			}
 			BuildType::Update => write!(f, "UPDATE {}", self.table),
 			BuildType::Delete => write!(f, "DELETE FROM {}", self.table),

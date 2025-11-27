@@ -154,3 +154,20 @@ async fn query_returns_page() {
 	assert_eq!(page.page_size, 50);
 	assert_eq!(page.items, vec![item]);
 }
+
+#[tokio::test]
+async fn query_exists() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+
+	insert_item(&item, &pool).await.unwrap();
+
+	let exists: bool = QueryBuilder::<Item>::from_ctx()
+		.r#where(Expression::Leaf(ItemQuery::NameEq("test".into())))
+		.build()
+		.exists(&pool)
+		.await
+		.unwrap();
+
+	assert!(exists);
+}

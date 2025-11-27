@@ -6,6 +6,7 @@ use sqlxo_traits::{
 	Filterable,
 	QueryContext,
 	Sortable,
+	SqlWrite,
 };
 
 use crate::{
@@ -106,7 +107,7 @@ where
 		&self,
 		build_type: BuildType,
 	) -> sqlx::QueryBuilder<'static, Postgres> {
-		let head = SqlHead::new(self.table, build_type);
+		let head = SqlHead::new(self.table, build_type.clone());
 		let mut w = SqlWriter::new(head);
 
 		if let Some(js) = &self.joins {
@@ -121,8 +122,22 @@ where
 			w.push_sort(s);
 		}
 
-		if let Some(p) = &self.pagination {
-			w.push_pagination(p);
+		match build_type {
+			BuildType::Select(SelectType::Exists) => {
+				w.push_pagination(&Pagination {
+					page:      0,
+					page_size: 1,
+				});
+			}
+			_ => {
+				if let Some(p) = &self.pagination {
+					w.push_pagination(p);
+				}
+			}
+		}
+
+		if let BuildType::Select(SelectType::Exists) = build_type {
+			w.push(")");
 		}
 
 		w.into_builder()
@@ -172,6 +187,25 @@ where
 
 		Ok(Page::new(items, pagination, total))
 	}
+
+	pub async fn exists<'e, E>(&self, exec: E) -> Result<bool, sqlx::Error>
+	where
+		E: Executor<'e, Database = Postgres>,
+	{
+		#[derive(sqlx::FromRow)]
+		struct ExistsRow {
+			exists: bool,
+		}
+
+		let row: ExistsRow = self
+			.to_query_builder(BuildType::Select(SelectType::Exists))
+			.build_query_as::<ExistsRow>()
+			.fetch_one(exec)
+			.await?;
+
+		Ok(row.exists)
+	}
+
 	pub async fn fetch_one<'e, E>(
 		&self,
 		exec: E,
