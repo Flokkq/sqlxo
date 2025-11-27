@@ -14,7 +14,10 @@ use utoipa::{
 
 mod builder;
 mod page;
-pub use page::WebPagination;
+pub use page::{
+	WebPage,
+	WebPagination,
+};
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
 #[serde(bound(deserialize = "Q: WebLeaf + Deserialize<'de>, S: \

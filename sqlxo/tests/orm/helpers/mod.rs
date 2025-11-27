@@ -42,6 +42,21 @@ pub struct Item {
 	pub material_id: Option<Uuid>,
 }
 
+impl Default for Item {
+	fn default() -> Self {
+		Item {
+			id:          Uuid::new_v4(),
+			name:        "test".into(),
+			description: "item description".into(),
+			price:       23.5f32,
+			amount:      2,
+			active:      true,
+			due_date:    chrono::Utc::now(),
+			material_id: None,
+		}
+	}
+}
+
 #[allow(dead_code)]
 #[bind(Item)]
 #[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]

@@ -7,6 +7,7 @@ use std::fmt::{
 pub enum SelectType {
 	Star,
 	Aggregation(AggregationType),
+	StarAndCount,
 }
 
 pub enum AggregationType {
@@ -54,6 +55,13 @@ impl<'a> Display for SqlHead<'a> {
 			}
 			BuildType::Select(SelectType::Aggregation(agg)) => {
 				write!(f, "SELECT {}(*) FROM {}", agg, self.table)
+			}
+			BuildType::Select(SelectType::StarAndCount) => {
+				write!(
+					f,
+					"SELECT *, COUNT(*) OVER() AS total_count FROM {}",
+					self.table
+				)
 			}
 			BuildType::Update => write!(f, "UPDATE {}", self.table),
 			BuildType::Delete => write!(f, "DELETE FROM {}", self.table),

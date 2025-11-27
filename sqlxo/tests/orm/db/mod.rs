@@ -5,6 +5,8 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::postgres::PgSslMode;
 use sqlx::PgPool;
 use sqlxo::and;
+use sqlxo::blocks::Expression;
+use sqlxo::blocks::Page;
 use sqlxo::blocks::Pagination;
 use sqlxo::or;
 use sqlxo::order_by;
@@ -83,21 +85,7 @@ pub async fn get_connection_pool() -> PgPool {
 	pool
 }
 
-#[tokio::test]
-async fn query_returns_expected_values() {
-	let pool = get_connection_pool().await;
-
-	let item = Item {
-		id:          Uuid::new_v4(),
-		name:        "test".into(),
-		description: "item description".into(),
-		price:       23.5f32,
-		amount:      2,
-		active:      true,
-		due_date:    chrono::Utc::now(),
-		material_id: None,
-	};
-
+async fn insert_item(item: &Item, pool: &PgPool) -> Result<(), sqlx::Error> {
 	sqlx::query(
         r#"
             INSERT INTO item (
@@ -114,9 +102,16 @@ async fn query_returns_expected_values() {
     .bind(item.active)
     .bind(item.due_date)
     .bind(item.material_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    .execute(pool)
+    .await.map(|_| ())
+}
+
+#[tokio::test]
+async fn query_returns_expected_values() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+
+	insert_item(&item, &pool).await.unwrap();
 
 	let maybe: Option<Item> = QueryBuilder::<Item>::from_ctx()
 		.r#where(and![ItemQuery::NameEq("test".into()), or![
@@ -134,4 +129,28 @@ async fn query_returns_expected_values() {
 		.unwrap();
 
 	assert_some_eq!(maybe, item);
+}
+
+#[tokio::test]
+async fn query_returns_page() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+
+	insert_item(&item, &pool).await.unwrap();
+
+	let page: Page<Item> = QueryBuilder::<Item>::from_ctx()
+		.r#where(Expression::Leaf(ItemQuery::NameEq("test".into())))
+		.paginate(Pagination {
+			page:      0,
+			page_size: 50,
+		})
+		.build()
+		.fetch_page(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(page.total, 1);
+	assert_eq!(page.page, 0);
+	assert_eq!(page.page_size, 50);
+	assert_eq!(page.items, vec![item]);
 }

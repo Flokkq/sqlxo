@@ -7,6 +7,8 @@ use utoipa::{
 	ToSchema,
 };
 
+use crate::blocks::Page;
+
 /// Standard pagination sent as **query** parameters.
 ///
 /// *If the caller omits either field Axum fills in the defaults.*
@@ -53,6 +55,29 @@ impl Default for WebPagination {
 		WebPagination {
 			page:      0,
 			page_size: i32::MAX as i64,
+		}
+	}
+}
+
+/// Standard pagination response.
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WebPage<T> {
+	pub items:       Vec<T>,
+	pub page_size:   i64,
+	pub page:        i64,
+	pub total:       i64,
+	pub total_pages: i64,
+}
+
+impl<T> From<Page<T>> for WebPage<T> {
+	fn from(value: Page<T>) -> Self {
+		Self {
+			items:       value.items,
+			page_size:   value.page_size,
+			page:        value.page,
+			total:       value.total,
+			total_pages: value.total_pages,
 		}
 	}
 }

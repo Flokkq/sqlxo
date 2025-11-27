@@ -13,6 +13,7 @@ use crate::{
 	blocks::{
 		BuildType,
 		Expression,
+		Page,
 		Pagination,
 		SelectType,
 		SortOrder,
@@ -140,11 +141,37 @@ where
 			.await
 	}
 
-	// pub async fn fetch_page<'e, E>(
-	//     &self,
-	//     exec: E,
-	// ) -> Result<>
+	pub async fn fetch_page<'e, E>(
+		&self,
+		exec: E,
+	) -> Result<Page<C::Model>, sqlx::Error>
+	where
+		E: Executor<'e, Database = Postgres>,
+	{
+		#[derive(sqlx::FromRow)]
+		struct RowWithCount<M> {
+			#[sqlx(flatten)]
+			model:       M,
+			total_count: i64,
+		}
 
+		let rows: Vec<RowWithCount<C::Model>> = self
+			.to_query_builder(BuildType::Select(SelectType::StarAndCount))
+			.build_query_as::<RowWithCount<C::Model>>()
+			.fetch_all(exec)
+			.await?;
+
+		let pagination = self.pagination.unwrap_or_default();
+
+		if rows.is_empty() {
+			return Ok(Page::new(vec![], pagination, 0));
+		}
+
+		let total = rows[0].total_count;
+		let items = rows.into_iter().map(|r| r.model).collect();
+
+		Ok(Page::new(items, pagination, total))
+	}
 	pub async fn fetch_one<'e, E>(
 		&self,
 		exec: E,

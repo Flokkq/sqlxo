@@ -21,7 +21,10 @@ pub use head::{
 	SelectType,
 	SqlHead,
 };
-pub use pagination::Pagination;
+pub use pagination::{
+	Page,
+	Pagination,
+};
 pub use sort::SortOrder;
 
 pub struct SqlWriter {
