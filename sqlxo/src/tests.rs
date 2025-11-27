@@ -2,6 +2,7 @@
 
 use crate::{
 	bind,
+	DtoFilter,
 	Query,
 	WebQuery,
 };
@@ -15,10 +16,7 @@ use serde_json::{
 	Value,
 };
 use sqlx::FromRow;
-use sqlxo_traits::{
-	DtoFilter,
-	JoinKind,
-};
+use sqlxo_traits::JoinKind;
 use uuid::Uuid;
 
 use crate::builder::{

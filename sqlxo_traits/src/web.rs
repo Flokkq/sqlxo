@@ -3,89 +3,23 @@ use serde::{
 	Serialize,
 };
 use utoipa::{
-	IntoParams,
 	PartialSchema,
 	ToSchema,
 };
 
-pub trait WebQueryModel {
-	type Leaf: ToSchema
-		+ Clone
-		+ serde::Serialize
-		+ for<'de> serde::Deserialize<'de>;
-	type SortField: ToSchema
-		+ Clone
-		+ serde::Serialize
-		+ for<'de> serde::Deserialize<'de>;
-}
-
-pub trait WebSortAccess: WebQueryModel {
-	fn sort_field(s: &DtoSort<Self>) -> <Self as WebQueryModel>::SortField;
-	fn sort_dir(s: &DtoSort<Self>) -> DtoSortDir;
-}
-
-#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
-#[serde(untagged)]
-pub enum GenericDtoExpression<Q> {
-	#[schema(no_recursion)]
-	And {
-		and: Vec<GenericDtoExpression<Q>>,
-	},
-	#[schema(no_recursion)]
-	Or {
-		or: Vec<GenericDtoExpression<Q>>,
-	},
-	Leaf(Q),
-}
-
-#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
-#[schema(bound = "S: ToSchema")]
-#[serde(transparent)]
-pub struct GenericDtoSort<S>(pub S);
-
-#[derive(Clone, Copy, Serialize, Deserialize, ToSchema, Debug)]
-#[serde(rename_all = "lowercase")]
-pub enum DtoSortDir {
-	Asc,
-	Desc,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, ToSchema, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct DtoPage {
-	pub page_size: u32,
-	pub page_no:   u32,
-}
-
-impl Default for DtoPage {
-	fn default() -> Self {
-		Self {
-			page_size: u32::MAX,
-			page_no:   0,
-		}
-	}
-}
-
-#[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct GenericDtoFilter<Q, S>
-where
-	Q: PartialSchema + ToSchema,
-	S: PartialSchema + ToSchema,
+pub trait WebLeaf: Clone + Serialize + ToSchema + PartialSchema {}
+impl<T> WebLeaf for T where
+	T: Clone + Serialize + for<'de> Deserialize<'de> + ToSchema + PartialSchema
 {
-	#[schema(no_recursion, nullable)]
-	pub filter: Option<GenericDtoExpression<Q>>,
-	#[schema(no_recursion, nullable)]
-	pub sort:   Option<Vec<GenericDtoSort<S>>>,
-	#[schema(nullable)]
-	pub page:   Option<DtoPage>,
 }
 
-pub type DtoExpression<T> = GenericDtoExpression<<T as WebQueryModel>::Leaf>;
+pub trait WebSortField: Clone + Serialize + ToSchema + PartialSchema {}
+impl<T> WebSortField for T where
+	T: Clone + Serialize + for<'de> Deserialize<'de> + ToSchema + PartialSchema
+{
+}
 
-pub type DtoSort<T> = GenericDtoSort<<T as WebQueryModel>::SortField>;
-
-pub type DtoFilter<T> = GenericDtoFilter<
-	<T as WebQueryModel>::Leaf,
-	<T as WebQueryModel>::SortField,
->;
+pub trait WebQueryModel {
+	type Leaf: WebLeaf;
+	type SortField: WebSortField;
+}

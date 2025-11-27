@@ -3,11 +3,12 @@ use crate::{
 	expression::Expression,
 	pagination::Pagination,
 	sort::SortOrder,
+	DtoExpression,
+	DtoFilter,
+	GenericDtoExpression,
 };
 use sqlxo_traits::{
 	Bind,
-	DtoExpression,
-	DtoFilter,
 	QueryContext,
 	WebQueryModel,
 };
@@ -17,7 +18,7 @@ where
 	C: QueryContext,
 	D: WebQueryModel + Bind<C>,
 {
-	use sqlxo_traits::GenericDtoExpression as E;
+	use GenericDtoExpression as E;
 	match e {
 		E::And { and } => {
 			Expression::And(and.iter().map(map_expr::<C, D>).collect())
@@ -44,15 +45,11 @@ where
 			qb = qb.r#where(expr);
 		}
 
-		if dto.sort.as_ref().is_some_and(|s| !s.is_empty()) {
-			let sorts: Vec<C::Sort> = dto
-				.sort
-				.clone()
-				.unwrap_or_default()
+		if let Some(sorts_in) = dto.sort.as_ref().filter(|s| !s.is_empty()) {
+			let sorts: Vec<C::Sort> = sorts_in
 				.iter()
-				.map(<D as Bind<C>>::map_sort_token)
+				.map(|s| <D as Bind<C>>::map_sort_field(&s.0))
 				.collect();
-
 			qb = qb.order_by(SortOrder::from(sorts));
 		}
 

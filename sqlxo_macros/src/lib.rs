@@ -1215,7 +1215,7 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		}
 
 		sort_arms.push(quote! {
-            #root::GenericDtoSort(#sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. })) => {
+            #sort_field_ident::#sort_variant_ident(inner @ #sort_wrap_ident { .. }) => {
                 match inner.#fname_ident {
                     #root::DtoSortDir::Asc  => <#entity_ty as #root::QueryContext>::Sort::#s_by_asc,
                     #root::DtoSortDir::Desc => <#entity_ty as #root::QueryContext>::Sort::#s_by_desc,
@@ -1225,26 +1225,26 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 	}
 
 	let out = quote! {
-		#dto
+			#dto
 
-		impl #root::Bind<#entity_ty> for #dto_ident {
-			fn map_leaf(
-				leaf: &<#dto_ident as #root::WebQueryModel>::Leaf
-			) -> <#entity_ty as #root::QueryContext>::Query {
-				match leaf {
-					#(#leaf_arms),* ,
-				}
-			}
-
-			fn map_sort_token(
-				sort: &#root::DtoSort<Self>
-			) -> <#entity_ty as #root::QueryContext>::Sort {
-				match sort {
-					#(#sort_arms),* ,
-				}
+	impl #root::Bind<#entity_ty> for #dto_ident {
+		fn map_leaf(
+			leaf: &<#dto_ident as #root::WebQueryModel>::Leaf
+		) -> <#entity_ty as #root::QueryContext>::Query {
+			match leaf {
+				#(#leaf_arms),* ,
 			}
 		}
-	};
+
+		fn map_sort_field(
+			sort: &<#dto_ident as #root::WebQueryModel>::SortField
+		) -> <#entity_ty as #root::QueryContext>::Sort {
+			match sort {
+				#(#sort_arms),* ,
+			}
+		}
+	}
+		};
 
 	out.into()
 }

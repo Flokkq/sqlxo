@@ -1,5 +1,4 @@
 use crate::{
-	DtoSort,
 	QueryContext,
 	WebQueryModel,
 };
@@ -10,5 +9,5 @@ where
 {
 	fn map_leaf(leaf: &<Self as WebQueryModel>::Leaf) -> C::Query;
 
-	fn map_sort_token(sort: &DtoSort<Self>) -> C::Sort;
+	fn map_sort_field(sort: &<Self as WebQueryModel>::SortField) -> C::Sort;
 }

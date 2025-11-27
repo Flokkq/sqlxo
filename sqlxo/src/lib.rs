@@ -22,7 +22,7 @@ mod head;
 mod macros;
 mod pagination;
 mod sort;
-mod webfilter;
+mod web;
 mod writer;
 
 pub use builder::{
@@ -38,6 +38,7 @@ pub use head::{
 };
 pub use pagination::Pagination;
 pub use sort::SortOrder;
+pub use web::*;
 pub use writer::SqlWriter;
 
 #[cfg(test)]
