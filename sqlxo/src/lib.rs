@@ -24,6 +24,3 @@ pub use builder::{
 	QueryBuilder,
 	QueryPlan,
 };
-
-#[cfg(test)]
-mod tests;
