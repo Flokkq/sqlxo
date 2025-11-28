@@ -1,10 +1,33 @@
 # Changelog
 
 
+## [0.4.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.0..v0.4.1) - 2025-11-28
+
+
+
+
+### ✨ Features
+
+- *(querybuilder)* Add exists executor for QueryPlan - ([bb999ca](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/bb999caf017de8fbc21e6531270ad14e1475dbaa))
+- *(querybuilder)* Add fetch_page executor - ([ae43f11](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/ae43f11215b7bb455d6baaac1cffa7ec93d264d1))
+
+### 🔧Chores
+
+- Remove dead code - ([8327f69](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/8327f69c90205a0c97fe1c68de1b8abbc68cbed4))
+
+### 🚜 Refactoring
+
+- Major refactor of entire application - ([db84c74](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/db84c7455b648ef3278702e728400e72bb0ac69b))
+
+
 ## [0.4.0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.3.4..v0.4.0) - 2025-11-27
 
 
 
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.4.0 - ([4461a36](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/4461a36e689e33a2341b1817c3229e7a0f80fa5e))
 
 ### 🚜 Refactoring
 
