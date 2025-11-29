@@ -27,6 +27,7 @@ chrono = { workspace = true }
 tokio = { workspace = true }
 utoipa = { workspace = true }
 thiserror = "2.0.17"
+async-trait = "0.1.89"
 
 [dev-dependencies]
 claims = "0.8.0"

@@ -2,11 +2,14 @@ use sqlx::{
 	Postgres,
 	Type,
 };
-use sqlxo_traits::SqlWrite;
 use sqlxo_traits::{
 	Filterable,
 	Sortable,
 	SqlJoin,
+};
+use sqlxo_traits::{
+	QueryContext,
+	SqlWrite,
 };
 
 mod expression;
@@ -17,15 +20,36 @@ mod sort;
 pub use expression::Expression;
 pub use head::{
 	AggregationType,
-	BuildType,
+	ReadHead,
 	SelectType,
-	SqlHead,
 };
 pub use pagination::{
 	Page,
 	Pagination,
 };
 pub use sort::SortOrder;
+
+use crate::blocks::head::ToHead;
+
+/// TODO: add modifier traits
+/// and()
+/// or()
+/// allow to wrap existing r#where clause in a and/or statement with another
+pub trait BuildableFilter<C: QueryContext> {
+	fn r#where(self, e: Expression<C::Query>) -> Self;
+}
+
+pub trait BuildableJoin<C: QueryContext> {
+	fn join(self, j: C::Join) -> Self;
+}
+
+pub trait BuildableSort<C: QueryContext> {
+	fn order_by(self, s: SortOrder<C::Sort>) -> Self;
+}
+
+pub trait BuildablePage<C: QueryContext> {
+	fn paginate(self, p: Pagination) -> Self;
+}
 
 pub struct SqlWriter {
 	qb:             sqlx::QueryBuilder<'static, Postgres>,
@@ -36,8 +60,9 @@ pub struct SqlWriter {
 }
 
 impl SqlWriter {
-	pub fn new(head: SqlHead) -> Self {
-		let qb = sqlx::QueryBuilder::<Postgres>::new(head.to_string());
+	pub fn new(head: impl ToHead) -> Self {
+		let qb =
+			sqlx::QueryBuilder::<Postgres>::new(head.to_head().to_string());
 
 		Self {
 			qb,

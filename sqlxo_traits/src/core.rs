@@ -3,15 +3,12 @@ use sqlx::{
 	Postgres,
 };
 
-pub trait QueryModel = Send
-	+ Clone
-	+ Unpin
-	+ for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>
-	+ 'static;
+pub trait QueryModel =
+	Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>;
 
-pub trait QueryQuery = Filterable + Send + Clone + Sync;
+pub trait FilterQuery = Filterable + Clone;
 
-pub trait QuerySort = Sortable + Send + Clone + Sync;
+pub trait QuerySort = Sortable + Clone;
 
 pub trait Filterable {
 	type Entity: QueryModel;
@@ -28,13 +25,13 @@ pub trait SqlWrite {
 		T: Type<Postgres>;
 }
 
-pub trait QueryContext {
+pub trait QueryContext: Send + Sync + 'static {
 	const TABLE: &'static str;
 
-	type Model: QueryModel;
-	type Query: QueryQuery;
-	type Sort: QuerySort;
-	type Join: SqlJoin;
+	type Model: QueryModel + Send + Sync;
+	type Query: FilterQuery + Send + Sync;
+	type Sort: QuerySort + Send + Sync;
+	type Join: SqlJoin + Send + Sync;
 }
 
 pub trait Sortable {

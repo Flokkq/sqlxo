@@ -4,11 +4,15 @@ use serde_json::{
 	Value,
 };
 use sqlxo::{
-	blocks::BuildType,
+	blocks::{
+		BuildableJoin,
+		SelectType,
+	},
 	web::WebFilter,
+	Buildable,
 	JoinKind,
 	QueryBuilder,
-	QueryPlan,
+	ReadQueryPlan,
 };
 
 use crate::helpers::{
@@ -67,13 +71,16 @@ fn query_builder_from_dto_filter() {
 	let f: WebFilter<ItemDto> =
 		serde_json::from_value(json).expect("valid ItemDtoFilter");
 
-	let plan: QueryPlan<Item> = QueryBuilder::<Item>::from_dto::<ItemDto>(&f)
-		.join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
-		.build();
+	let plan: ReadQueryPlan<Item> =
+		QueryBuilder::<Item>::from_dto::<ItemDto>(&f)
+			.join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
+			.build();
 
 	assert_eq!(
-		plan.sql(BuildType::Raw).trim_start().normalize(),
+		plan.sql(SelectType::Star).trim_start().normalize(),
 		r#"
+        SELECT *
+        FROM item
         LEFT JOIN material ON "item"."material_id" = "material"."id"
         WHERE (name LIKE $1 AND (price > $2 OR description <> $3))
         ORDER BY name ASC, description DESC

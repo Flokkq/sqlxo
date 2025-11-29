@@ -1,14 +1,19 @@
 use sqlxo::{
 	and,
 	blocks::{
-		BuildType,
+		BuildableFilter,
+		BuildableJoin,
+		BuildablePage,
+		BuildableSort,
 		Pagination,
+		SelectType,
 	},
 	or,
 	order_by,
+	Buildable,
 	JoinKind,
 	QueryBuilder,
-	QueryPlan,
+	ReadQueryPlan,
 };
 
 use crate::helpers::{
@@ -21,7 +26,7 @@ use crate::helpers::{
 
 #[test]
 fn query_builder() {
-	let plan: QueryPlan<Item> = QueryBuilder::from_ctx()
+	let plan: ReadQueryPlan<Item> = QueryBuilder::insert()
 		.join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
 		.r#where(and![ItemQuery::NameLike("Clemens".into()), or![
 			ItemQuery::PriceGt(1800.00f32),
@@ -35,8 +40,10 @@ fn query_builder() {
 		.build();
 
 	assert_eq!(
-		plan.sql(BuildType::Raw).trim_start(),
+		plan.sql(SelectType::Star).trim_start(),
 		r#"
+            SELECT *
+            FROM item
             LEFT JOIN material ON "item"."material_id" = "material"."id"
             WHERE (name LIKE $1 AND (price > $2 OR description IS NULL))
             ORDER BY name ASC, price DESC

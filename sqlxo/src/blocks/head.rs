@@ -1,7 +1,10 @@
 use core::fmt;
-use std::fmt::{
-	Display,
-	Formatter,
+use std::{
+	borrow::Cow,
+	fmt::{
+		Display,
+		Formatter,
+	},
 };
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -20,23 +23,24 @@ pub enum AggregationType {
 	Avg,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum BuildType {
-	Select(SelectType),
-	Update,
-	Delete,
-	#[cfg(any(test, feature = "test-utils"))]
-	Raw,
+pub trait ToHead {
+	fn to_head(self) -> Cow<'static, str>;
 }
 
-pub struct SqlHead<'a> {
-	build: BuildType,
-	table: &'a str,
+pub struct ReadHead<'a> {
+	r#type: SelectType,
+	table:  &'a str,
 }
 
-impl<'a> SqlHead<'a> {
-	pub fn new(table: &'a str, build: BuildType) -> Self {
-		Self { build, table }
+impl<'a> ReadHead<'a> {
+	pub fn new(table: &'a str, r#type: SelectType) -> Self {
+		Self { r#type, table }
+	}
+}
+
+impl<'a> ToHead for ReadHead<'a> {
+	fn to_head(self) -> Cow<'static, str> {
+		self.to_string().into()
 	}
 }
 
@@ -51,29 +55,26 @@ impl Display for AggregationType {
 	}
 }
 
-impl<'a> Display for SqlHead<'a> {
+impl<'a> Display for ReadHead<'a> {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		match &self.build {
-			BuildType::Select(SelectType::Star) => {
+		match &self.r#type {
+			SelectType::Star => {
 				write!(f, "SELECT * FROM {}", self.table)
 			}
-			BuildType::Select(SelectType::Aggregation(agg)) => {
+			SelectType::Aggregation(agg) => {
 				write!(f, "SELECT {}(*) FROM {}", agg, self.table)
 			}
-			BuildType::Select(SelectType::StarAndCount) => {
+			SelectType::StarAndCount => {
 				write!(
 					f,
 					"SELECT *, COUNT(*) OVER() AS total_count FROM {}",
 					self.table
 				)
 			}
-			BuildType::Select(SelectType::Exists) => {
+			SelectType::Exists => {
 				write!(f, "SELECT EXISTS(SELECT 1 FROM {}", self.table)
-			}
-			BuildType::Update => write!(f, "UPDATE {}", self.table),
-			BuildType::Delete => write!(f, "DELETE FROM {}", self.table),
-			#[cfg(any(test, feature = "test-utils"))]
-			BuildType::Raw => write!(f, ""),
+			} /* #[cfg(any(test, feature = "test-utils"))]
+			   * BuildType::Raw => write!(f, ""), */
 		}
 	}
 }

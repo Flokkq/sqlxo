@@ -1,15 +1,19 @@
 use crate::{
 	blocks::{
+		BuildableFilter,
+		BuildablePage,
+		BuildableSort,
 		Expression,
 		Pagination,
 		SortOrder,
 	},
-	builder::QueryBuilder,
 	web::{
 		GenericWebExpression,
 		WebExpression,
 		WebFilter,
 	},
+	QueryBuilder,
+	ReadQueryBuilder,
 };
 use sqlxo_traits::{
 	Bind,
@@ -35,15 +39,15 @@ where
 	}
 }
 
-impl<'a, C> QueryBuilder<'a, C>
+impl<'a, C> QueryBuilder<C>
 where
 	C: QueryContext,
 {
-	pub fn from_dto<D>(dto: &WebFilter<D>) -> Self
+	pub fn from_dto<D>(dto: &WebFilter<D>) -> ReadQueryBuilder<'a, C>
 	where
 		D: WebQueryModel + Bind<C>,
 	{
-		let mut qb = QueryBuilder::<C>::from_ctx();
+		let mut qb = QueryBuilder::<C>::insert();
 
 		if let Some(f) = &dto.filter {
 			let expr = map_expr::<C, D>(f);

@@ -5,11 +5,16 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::postgres::PgSslMode;
 use sqlx::PgPool;
 use sqlxo::and;
+use sqlxo::blocks::BuildableFilter;
+use sqlxo::blocks::BuildablePage;
+use sqlxo::blocks::BuildableSort;
 use sqlxo::blocks::Expression;
 use sqlxo::blocks::Page;
 use sqlxo::blocks::Pagination;
 use sqlxo::or;
 use sqlxo::order_by;
+use sqlxo::Buildable;
+use sqlxo::FetchablePlan;
 use sqlxo::QueryBuilder;
 use uuid::Uuid;
 
@@ -113,7 +118,7 @@ async fn query_returns_expected_values() {
 
 	insert_item(&item, &pool).await.unwrap();
 
-	let maybe: Option<Item> = QueryBuilder::<Item>::from_ctx()
+	let maybe: Option<Item> = QueryBuilder::<Item>::insert()
 		.r#where(and![ItemQuery::NameEq("test".into()), or![
 			ItemQuery::PriceLt(10.00f32),
 			ItemQuery::AmountEq(2)
@@ -138,7 +143,7 @@ async fn query_returns_page() {
 
 	insert_item(&item, &pool).await.unwrap();
 
-	let page: Page<Item> = QueryBuilder::<Item>::from_ctx()
+	let page: Page<Item> = QueryBuilder::<Item>::insert()
 		.r#where(Expression::Leaf(ItemQuery::NameEq("test".into())))
 		.paginate(Pagination {
 			page:      0,
@@ -162,7 +167,7 @@ async fn query_exists() {
 
 	insert_item(&item, &pool).await.unwrap();
 
-	let exists: bool = QueryBuilder::<Item>::from_ctx()
+	let exists: bool = QueryBuilder::<Item>::insert()
 		.r#where(Expression::Leaf(ItemQuery::NameEq("test".into())))
 		.build()
 		.exists(&pool)
