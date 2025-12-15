@@ -9,7 +9,7 @@ readme = { workspace = true }
 description = { workspace = true }
 
 [features]
-default = []
+default = ["test-utils"]
 ignore-db-tests = []
 test-utils = []
 

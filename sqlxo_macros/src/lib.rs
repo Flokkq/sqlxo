@@ -1429,3 +1429,121 @@ pub fn derive_soft_delete(input: TokenStream) -> TokenStream {
 
 	out.into()
 }
+
+#[proc_macro_derive(Update, attributes(sqlxo, primary_key, foreign_key))]
+pub fn derive_update(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let root = sqlxo_root();
+
+	let struct_ident = &input.ident;
+	let update_ident = format_ident!("{}Update", struct_ident);
+
+	let data = match &input.data {
+		Data::Struct(s) => s,
+		_ => {
+			return Error::new_spanned(
+				&input.ident,
+				"`Update` supports only structs",
+			)
+			.to_compile_error()
+			.into();
+		}
+	};
+
+	let fields = match &data.fields {
+		Fields::Named(named) => &named.named,
+		other => {
+			return Error::new_spanned(other, "`Update` requires named fields")
+				.to_compile_error()
+				.into();
+		}
+	};
+
+	let markers = match extract_marker_fields(fields) {
+		Ok(m) => m,
+		Err(e) => return e.to_compile_error().into(),
+	};
+
+	// Collect primary key fields
+	let mut pk_fields = Vec::new();
+	for field in fields.iter() {
+		for attr in &field.attrs {
+			if attr.path.is_ident("primary_key") {
+				let field_name = field.ident.as_ref().unwrap().to_string();
+				pk_fields.push(field_name);
+			}
+		}
+	}
+
+	// Generate update struct fields
+	let mut update_fields = Vec::new();
+	let mut field_names = Vec::new();
+
+	for field in fields.iter() {
+		let field_ident = field.ident.as_ref().unwrap();
+		let field_name = field_ident.to_string();
+		let ty = &field.ty;
+
+		// Skip primary keys
+		if pk_fields.contains(&field_name) {
+			continue;
+		}
+
+		// Skip markers
+		if Some(&field_name) == markers.delete_marker.as_ref()
+			|| Some(&field_name) == markers.update_marker.as_ref()
+			|| Some(&field_name) == markers.create_marker.as_ref()
+		{
+			continue;
+		}
+
+		// Wrap field type in Option
+		// If already Option<T>, wrap as Option<Option<T>>
+		update_fields.push(quote! {
+			pub #field_ident: Option<#ty>
+		});
+		field_names.push(field_ident);
+	}
+
+	let update_marker_field = markers.update_marker.map(|f| quote! { Some(#f) })
+		.unwrap_or_else(|| quote! { None });
+
+	let out = quote! {
+		#[derive(Debug, Clone, Default)]
+		pub struct #update_ident {
+			#(#update_fields),*
+		}
+
+		impl #root::Updatable for #struct_ident {
+			type UpdateModel = #update_ident;
+			const UPDATE_MARKER_FIELD: Option<&'static str> = #update_marker_field;
+		}
+
+		impl #root::UpdateModel for #update_ident {
+			type Entity = #struct_ident;
+
+			fn apply_updates(&self, qb: &mut sqlx::QueryBuilder<'static, sqlx::Postgres>) -> Vec<&'static str> {
+				let mut set_fields = Vec::new();
+				let mut first = true;
+
+				#(
+					if let Some(ref val) = self.#field_names {
+						if !first {
+							qb.push(", ");
+						}
+						first = false;
+
+						qb.push(stringify!(#field_names));
+						qb.push(" = ");
+						qb.push_bind(val.clone());
+						set_fields.push(stringify!(#field_names));
+					}
+				)*
+
+				set_fields
+			}
+		}
+	};
+
+	out.into()
+}

@@ -74,3 +74,17 @@ impl<T: Deletable> GetDeleteMarker for T {
 		T::DELETE_MARKER_FIELD
 	}
 }
+
+/// Trait for models that support update operations
+pub trait Updatable {
+	type UpdateModel: UpdateModel<Entity = Self>;
+	const UPDATE_MARKER_FIELD: Option<&'static str>;
+}
+
+/// Trait for update model structs
+pub trait UpdateModel: Clone + Send + Sync {
+	type Entity: QueryModel;
+
+	/// Apply updates to a query builder, returns list of field names that were set
+	fn apply_updates(&self, qb: &mut sqlx::QueryBuilder<'static, sqlx::Postgres>) -> Vec<&'static str>;
+}

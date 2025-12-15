@@ -1,4 +1,4 @@
-#![cfg(not(feature = "ignore-db-tests"))]
+#[cfg(not(feature = "ignore-db-tests"))]
 mod db;
 
 mod blocks;
