@@ -39,7 +39,7 @@ impl<'a, C> QueryBuilder<C>
 where
 	C: QueryContext,
 {
-	pub fn insert() -> ReadQueryBuilder<'a, C> {
+	pub fn read() -> ReadQueryBuilder<'a, C> {
 		ReadQueryBuilder::from_ctx()
 	}
 }

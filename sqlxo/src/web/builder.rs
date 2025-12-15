@@ -47,7 +47,7 @@ where
 	where
 		D: WebQueryModel + Bind<C>,
 	{
-		let mut qb = QueryBuilder::<C>::insert();
+		let mut qb = QueryBuilder::<C>::read();
 
 		if let Some(f) = &dto.filter {
 			let expr = map_expr::<C, D>(f);

@@ -118,7 +118,7 @@ async fn query_returns_expected_values() {
 
 	insert_item(&item, &pool).await.unwrap();
 
-	let maybe: Option<Item> = QueryBuilder::<Item>::insert()
+	let maybe: Option<Item> = QueryBuilder::<Item>::read()
 		.r#where(and![ItemQuery::NameEq("test".into()), or![
 			ItemQuery::PriceLt(10.00f32),
 			ItemQuery::AmountEq(2)
@@ -143,7 +143,7 @@ async fn query_returns_page() {
 
 	insert_item(&item, &pool).await.unwrap();
 
-	let page: Page<Item> = QueryBuilder::<Item>::insert()
+	let page: Page<Item> = QueryBuilder::<Item>::read()
 		.r#where(Expression::Leaf(ItemQuery::NameEq("test".into())))
 		.paginate(Pagination {
 			page:      0,
@@ -167,7 +167,7 @@ async fn query_exists() {
 
 	insert_item(&item, &pool).await.unwrap();
 
-	let exists: bool = QueryBuilder::<Item>::insert()
+	let exists: bool = QueryBuilder::<Item>::read()
 		.r#where(Expression::Leaf(ItemQuery::NameEq("test".into())))
 		.build()
 		.exists(&pool)

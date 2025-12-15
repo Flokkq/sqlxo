@@ -26,7 +26,7 @@ use crate::helpers::{
 
 #[test]
 fn query_builder() {
-	let plan: ReadQueryPlan<Item> = QueryBuilder::insert()
+	let plan: ReadQueryPlan<Item> = QueryBuilder::read()
 		.join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
 		.r#where(and![ItemQuery::NameLike("Clemens".into()), or![
 			ItemQuery::PriceGt(1800.00f32),
