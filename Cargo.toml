@@ -1,5 +1,5 @@
 [workspace.package]
-name = "sql-filter"
+name = "sqxlo workspace"
 version = "0.4.1"
 edition = "2021"
 authors = ["Flokkq <webcla21@htl-kaindorf.at>"]
