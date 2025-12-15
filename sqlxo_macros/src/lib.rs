@@ -37,6 +37,31 @@ enum Kind {
 	Time,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Will be used for future cascade behavior
+enum CascadeType {
+	Cascade,
+	Restrict,
+	SetNull,
+}
+
+#[derive(Debug, Clone)]
+struct MarkerFields {
+	delete_marker: Option<String>,
+	update_marker: Option<String>,
+	create_marker: Option<String>,
+}
+
+impl MarkerFields {
+	fn new() -> Self {
+		Self {
+			delete_marker: None,
+			update_marker: None,
+			create_marker: None,
+		}
+	}
+}
+
 fn sqlxo_root() -> proc_macro2::TokenStream {
 	match proc_macro_crate::crate_name("sqlxo") {
 		Ok(FoundCrate::Itself) => quote!(sqlxo),
@@ -171,11 +196,71 @@ fn extract_table_name(input: &DeriveInput) -> syn::Result<Option<String>> {
 	Ok(value)
 }
 
+fn extract_marker_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> syn::Result<MarkerFields> {
+	let mut markers = MarkerFields::new();
+
+	for field in fields.iter() {
+		let field_name = field.ident.as_ref().unwrap().to_string().to_snake_case();
+
+		for attr in &field.attrs {
+			if !attr.path.is_ident("sqlxo") {
+				continue;
+			}
+
+			let meta = attr.parse_meta().map_err(|_| {
+				syn::Error::new_spanned(attr, "invalid #[sqlxo] attribute")
+			})?;
+
+			let list = match meta {
+				Meta::List(list) => list,
+				_ => continue,
+			};
+
+			for nested in list.nested {
+				match nested {
+					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("delete_marker") => {
+						if markers.delete_marker.is_some() {
+							return Err(syn::Error::new_spanned(
+								attr,
+								"duplicate #[sqlxo::delete_marker]",
+							));
+						}
+						markers.delete_marker = Some(field_name.clone());
+					}
+					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("update_marker") => {
+						if markers.update_marker.is_some() {
+							return Err(syn::Error::new_spanned(
+								attr,
+								"duplicate #[sqlxo::update_marker]",
+							));
+						}
+						markers.update_marker = Some(field_name.clone());
+					}
+					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("create_marker") => {
+						if markers.create_marker.is_some() {
+							return Err(syn::Error::new_spanned(
+								attr,
+								"duplicate #[sqlxo::create_marker]",
+							));
+						}
+						markers.create_marker = Some(field_name.clone());
+					}
+					_ => {}
+				}
+			}
+		}
+	}
+
+	Ok(markers)
+}
+
 struct FkSpec {
 	fk_field_snake:  String,
 	fk_field_pascal: Ident,
 	right_table:     String,
 	right_pk:        String,
+	#[allow(dead_code)] // Will be used for future cascade behavior
+	cascade_type:    Option<CascadeType>,
 }
 
 fn build_join_codegen(
@@ -325,6 +410,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				};
 
 				let mut to_value: Option<String> = None;
+				let mut cascade_type: Option<CascadeType> = None;
 
 				for nested in list.nested {
 					match nested {
@@ -353,10 +439,32 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 								}
 							}
 						}
+						NestedMeta::Meta(Meta::List(inner_list))
+							if inner_list.path.is_ident("cascade_type") =>
+						{
+							for inner_nested in inner_list.nested {
+								if let NestedMeta::Meta(Meta::Path(path)) = inner_nested {
+									if path.is_ident("cascade") {
+										cascade_type = Some(CascadeType::Cascade);
+									} else if path.is_ident("restrict") {
+										cascade_type = Some(CascadeType::Restrict);
+									} else if path.is_ident("set_null") {
+										cascade_type = Some(CascadeType::SetNull);
+									} else {
+										return Error::new_spanned(
+											path,
+											"unknown cascade type; expected cascade, restrict, or set_null",
+										)
+										.to_compile_error()
+										.into();
+									}
+								}
+							}
+						}
 						other => {
 							return Error::new_spanned(
 								other,
-								r#"unknown key; only `to = "table.pk"`"#,
+								r#"unknown key; expected `to = "table.pk"` or `cascade_type(...)`"#,
 							)
 							.to_compile_error()
 							.into();
@@ -392,6 +500,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 					fk_field_pascal: format_ident!("{}", field_name_pascal),
 					right_table,
 					right_pk,
+					cascade_type,
 				});
 			}
 		}
@@ -1245,6 +1354,78 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		}
 	}
 		};
+
+	out.into()
+}
+
+#[proc_macro_derive(Delete, attributes(sqlxo, primary_key, foreign_key))]
+pub fn derive_delete(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let root = sqlxo_root();
+
+	let struct_ident = &input.ident;
+
+	let out = quote! {
+		impl #root::Deletable for #struct_ident {
+			const IS_SOFT_DELETE: bool = false;
+			const DELETE_MARKER_FIELD: Option<&'static str> = None;
+		}
+	};
+
+	out.into()
+}
+
+#[proc_macro_derive(SoftDelete, attributes(sqlxo, primary_key, foreign_key))]
+pub fn derive_soft_delete(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let root = sqlxo_root();
+
+	let struct_ident = &input.ident;
+
+	let data = match &input.data {
+		Data::Struct(s) => s,
+		_ => {
+			return Error::new_spanned(
+				&input.ident,
+				"`SoftDelete` supports only structs",
+			)
+			.to_compile_error()
+			.into();
+		}
+	};
+
+	let fields = match &data.fields {
+		Fields::Named(named) => &named.named,
+		other => {
+			return Error::new_spanned(other, "`SoftDelete` requires named fields")
+				.to_compile_error()
+				.into();
+		}
+	};
+
+	let markers = match extract_marker_fields(fields) {
+		Ok(m) => m,
+		Err(e) => return e.to_compile_error().into(),
+	};
+
+	let delete_marker = match markers.delete_marker {
+		Some(ref field) => quote! { Some(#field) },
+		None => {
+			return Error::new_spanned(
+				&input.ident,
+				"`SoftDelete` requires a field marked with #[sqlxo::delete_marker]",
+			)
+			.to_compile_error()
+			.into();
+		}
+	};
+
+	let out = quote! {
+		impl #root::Deletable for #struct_ident {
+			const IS_SOFT_DELETE: bool = true;
+			const DELETE_MARKER_FIELD: Option<&'static str> = #delete_marker;
+		}
+	};
 
 	out.into()
 }

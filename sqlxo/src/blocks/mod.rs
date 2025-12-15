@@ -20,6 +20,7 @@ mod sort;
 pub use expression::Expression;
 pub use head::{
 	AggregationType,
+	DeleteHead,
 	ReadHead,
 	SelectType,
 };
@@ -95,6 +96,30 @@ impl SqlWriter {
 		self.qb.push(" WHERE ");
 		self.has_where = true;
 		expr.write(self);
+	}
+
+	pub fn push_soft_delete_filter<F: Filterable>(
+		&mut self,
+		delete_field: &str,
+		existing_expr: Option<&Expression<F>>,
+	) {
+		if self.has_where {
+			return;
+		}
+
+		self.qb.push(" WHERE ");
+		self.has_where = true;
+
+		// Add soft delete filter
+		self.qb.push(delete_field);
+		self.qb.push(" IS NULL");
+
+		// If there's an existing expression, AND it
+		if let Some(expr) = existing_expr {
+			self.qb.push(" AND (");
+			expr.write(self);
+			self.qb.push(")");
+		}
 	}
 
 	pub fn push_sort<S: Sortable>(&mut self, sort: &SortOrder<S>) {

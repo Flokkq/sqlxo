@@ -16,3 +16,18 @@ CREATE TABLE item (
     material_id UUID REFERENCES material(id)
 );
 
+CREATE TABLE hard_delete_item (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    price REAL NOT NULL
+);
+
+CREATE TABLE soft_delete_item (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    price REAL NOT NULL,
+    deleted_at TIMESTAMPTZ
+);
+

@@ -5,9 +5,11 @@ use serde::{
 use sqlx::prelude::FromRow;
 use sqlxo::{
 	bind,
+	Delete,
+	Query,
+	SoftDelete,
 	WebQuery,
 };
-use sqlxo_macros::Query;
 use uuid::Uuid;
 
 pub trait NormalizeString {
@@ -80,4 +82,53 @@ pub struct Material {
 	pub name:        String,
 	pub long_name:   String,
 	pub description: String,
+}
+
+// Hard delete test model
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, Delete, PartialEq)]
+#[sqlxo(table_name = "hard_delete_item")]
+pub struct HardDeleteItem {
+	#[primary_key]
+	pub id:          Uuid,
+	pub name:        String,
+	pub description: String,
+	pub price:       f32,
+}
+
+impl Default for HardDeleteItem {
+	fn default() -> Self {
+		Self {
+			id:          Uuid::new_v4(),
+			name:        "hard delete test".into(),
+			description: "test item".into(),
+			price:       50.0,
+		}
+	}
+}
+
+// Soft delete test model
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, SoftDelete, PartialEq)]
+#[sqlxo(table_name = "soft_delete_item")]
+pub struct SoftDeleteItem {
+	#[primary_key]
+	pub id:          Uuid,
+	pub name:        String,
+	pub description: String,
+	pub price:       f32,
+	#[sqlxo(delete_marker)]
+	pub deleted_at:  Option<sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>>,
+}
+
+impl Default for SoftDeleteItem {
+	fn default() -> Self {
+		Self {
+			id:          Uuid::new_v4(),
+			name:        "soft delete test".into(),
+			description: "test item".into(),
+			price:       75.0,
+			deleted_at:  None,
+		}
+	}
 }

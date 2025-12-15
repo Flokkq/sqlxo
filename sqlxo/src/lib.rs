@@ -1,5 +1,7 @@
 #![feature(trait_alias)]
 #![forbid(unsafe_code)]
+#![feature(specialization)]
+#![allow(incomplete_features)]
 extern crate self as sqlxo;
 
 pub use sqlxo_macros::*;
@@ -20,7 +22,12 @@ pub mod prelude {
 pub mod blocks;
 pub mod web;
 
+mod delete;
 mod read;
+pub use delete::{
+	DeleteQueryBuilder,
+	DeleteQueryPlan,
+};
 pub use read::{
 	ReadQueryBuilder,
 	ReadQueryPlan,
@@ -41,6 +48,13 @@ where
 {
 	pub fn read() -> ReadQueryBuilder<'a, C> {
 		ReadQueryBuilder::from_ctx()
+	}
+
+	pub fn delete() -> DeleteQueryBuilder<'a, C>
+	where
+		C::Model: crate::Deletable,
+	{
+		DeleteQueryBuilder::from_ctx()
 	}
 }
 

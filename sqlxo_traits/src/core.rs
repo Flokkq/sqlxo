@@ -53,3 +53,24 @@ pub trait SqlJoin {
 }
 
 pub trait Model {}
+
+pub trait Deletable {
+	const IS_SOFT_DELETE: bool;
+	const DELETE_MARKER_FIELD: Option<&'static str>;
+}
+
+pub trait GetDeleteMarker {
+	fn delete_marker_field() -> Option<&'static str>;
+}
+
+impl<T> GetDeleteMarker for T {
+	default fn delete_marker_field() -> Option<&'static str> {
+		None
+	}
+}
+
+impl<T: Deletable> GetDeleteMarker for T {
+	fn delete_marker_field() -> Option<&'static str> {
+		T::DELETE_MARKER_FIELD
+	}
+}

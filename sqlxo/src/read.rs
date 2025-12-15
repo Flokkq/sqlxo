@@ -5,6 +5,7 @@ use sqlx::{
 use sqlxo_traits::{
 	QueryContext,
 	SqlWrite,
+	GetDeleteMarker,
 };
 
 use crate::{
@@ -43,11 +44,13 @@ where
 }
 
 pub struct ReadQueryPlan<'a, C: QueryContext> {
-	pub(crate) joins:      Option<Vec<C::Join>>,
-	pub(crate) where_expr: Option<Expression<C::Query>>,
-	pub(crate) sort_expr:  Option<SortOrder<C::Sort>>,
-	pub(crate) pagination: Option<Pagination>,
-	pub(crate) table:      &'a str,
+	pub(crate) joins:               Option<Vec<C::Join>>,
+	pub(crate) where_expr:          Option<Expression<C::Query>>,
+	pub(crate) sort_expr:           Option<SortOrder<C::Sort>>,
+	pub(crate) pagination:          Option<Pagination>,
+	pub(crate) table:               &'a str,
+	pub(crate) include_deleted:     bool,
+	pub(crate) delete_marker_field: Option<&'a str>,
 }
 
 impl<'a, C> ReadQueryPlan<'a, C>
@@ -65,26 +68,19 @@ where
 			w.push_joins(js);
 		}
 
-		if let Some(e) = &self.where_expr {
-			w.push_where(e);
-		}
+		self.push_where_clause(&mut w);
 
 		if let Some(s) = &self.sort_expr {
 			w.push_sort(s);
 		}
 
-		match select_type {
-			SelectType::Exists => {
-				w.push_pagination(&Pagination {
-					page:      0,
-					page_size: 1,
-				});
-			}
-			_ => {
-				if let Some(p) = &self.pagination {
-					w.push_pagination(p);
-				}
-			}
+		if let SelectType::Exists = select_type {
+			w.push_pagination(&Pagination {
+				page:      0,
+				page_size: 1,
+			});
+		} else if let Some(p) = &self.pagination {
+			w.push_pagination(p);
 		}
 
 		if let SelectType::Exists = select_type {
@@ -92,6 +88,24 @@ where
 		}
 
 		w.into_builder()
+	}
+
+	fn push_where_clause(&self, w: &mut SqlWriter) {
+		if self.include_deleted {
+			if let Some(e) = &self.where_expr {
+				w.push_where(e);
+			}
+			return;
+		}
+
+		let Some(delete_field) = self.delete_marker_field else {
+			if let Some(e) = &self.where_expr {
+				w.push_where(e);
+			}
+			return;
+		};
+
+		w.push_soft_delete_filter(delete_field, self.where_expr.as_ref());
 	}
 
 	pub async fn fetch_page<'e, E>(
@@ -216,36 +230,53 @@ where
 impl<'a, C> Planable<C> for ReadQueryPlan<'a, C> where C: QueryContext {}
 
 pub struct ReadQueryBuilder<'a, C: QueryContext> {
-	pub(crate) table:      &'a str,
-	pub(crate) joins:      Option<Vec<C::Join>>,
-	pub(crate) where_expr: Option<Expression<C::Query>>,
-	pub(crate) sort_expr:  Option<SortOrder<C::Sort>>,
-	pub(crate) pagination: Option<Pagination>,
+	pub(crate) table:               &'a str,
+	pub(crate) joins:               Option<Vec<C::Join>>,
+	pub(crate) where_expr:          Option<Expression<C::Query>>,
+	pub(crate) sort_expr:           Option<SortOrder<C::Sort>>,
+	pub(crate) pagination:          Option<Pagination>,
+	pub(crate) include_deleted:     bool,
+	pub(crate) delete_marker_field: Option<&'a str>,
+}
+
+impl<'a, C> ReadQueryBuilder<'a, C>
+where
+	C: QueryContext,
+{
+	pub fn include_deleted(mut self) -> Self {
+		self.include_deleted = true;
+		self
+	}
 }
 
 impl<'a, C> Buildable<C> for ReadQueryBuilder<'a, C>
 where
 	C: QueryContext,
+	C::Model: crate::GetDeleteMarker,
 {
 	type Plan = ReadQueryPlan<'a, C>;
 
 	fn from_ctx() -> Self {
 		Self {
-			table:      C::TABLE,
-			joins:      None,
-			where_expr: None,
-			sort_expr:  None,
-			pagination: None,
+			table:               C::TABLE,
+			joins:               None,
+			where_expr:          None,
+			sort_expr:           None,
+			pagination:          None,
+			include_deleted:     false,
+			delete_marker_field: C::Model::delete_marker_field(),
 		}
 	}
 
 	fn build(self) -> Self::Plan {
 		ReadQueryPlan {
-			joins:      self.joins,
-			where_expr: self.where_expr,
-			sort_expr:  self.sort_expr,
-			pagination: self.pagination,
-			table:      self.table,
+			joins:               self.joins,
+			where_expr:          self.where_expr,
+			sort_expr:           self.sort_expr,
+			pagination:          self.pagination,
+			table:               self.table,
+			include_deleted:     self.include_deleted,
+			delete_marker_field: self.delete_marker_field,
 		}
 	}
 }
@@ -253,6 +284,7 @@ where
 impl<'a, C> BuildableFilter<C> for ReadQueryBuilder<'a, C>
 where
 	C: QueryContext,
+	C::Model: crate::GetDeleteMarker,
 {
 	fn r#where(mut self, e: Expression<<C as QueryContext>::Query>) -> Self {
 		match self.where_expr {
@@ -267,6 +299,7 @@ where
 impl<'a, C> BuildableJoin<C> for ReadQueryBuilder<'a, C>
 where
 	C: QueryContext,
+	C::Model: crate::GetDeleteMarker,
 {
 	fn join(mut self, j: <C as QueryContext>::Join) -> Self {
 		match &mut self.joins {
@@ -281,6 +314,7 @@ where
 impl<'a, C> BuildableSort<C> for ReadQueryBuilder<'a, C>
 where
 	C: QueryContext,
+	C::Model: crate::GetDeleteMarker,
 {
 	fn order_by(mut self, s: SortOrder<<C as QueryContext>::Sort>) -> Self {
 		match self.sort_expr {
@@ -295,6 +329,7 @@ where
 impl<'a, C> BuildablePage<C> for ReadQueryBuilder<'a, C>
 where
 	C: QueryContext,
+	C::Model: crate::GetDeleteMarker,
 {
 	fn paginate(mut self, p: Pagination) -> Self {
 		self.pagination = Some(p);
@@ -302,7 +337,9 @@ where
 	}
 }
 
-impl<'a, C> BuildableReadQuery<C> for ReadQueryBuilder<'a, C> where
-	C: QueryContext
+impl<'a, C> BuildableReadQuery<C> for ReadQueryBuilder<'a, C>
+where
+	C: QueryContext,
+	C::Model: crate::GetDeleteMarker,
 {
 }
