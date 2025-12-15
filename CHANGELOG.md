@@ -1,6 +1,28 @@
 # Changelog
 
 
+## [0.4.2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.1..v0.4.2) - 2025-12-15
+
+
+
+
+### ✨ Features
+
+- *(delete)* Impelent soft and hard delete flow - ([c4b855f](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/c4b855f99096df5ac824e7dda333ae7c0ad7978a))
+
+### 🐛 Bug Fixes
+
+- Rename read query - ([c5721dc](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/c5721dccba4c94e9a28b58df2b5e95d16e2d2aaf))
+
+### 🔧Chores
+
+- *(cargo)* Rename workspace package to sqlxo workspace - ([9bb70b4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/9bb70b42b0995ac3faa149b9bada545c97179674))
+
+### 🚜 Refactoring
+
+- Querybuilder and plan into reusable traits - ([28bf0bb](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/28bf0bbe3e5f83c6ed9faa84e2e13c375ae2c673))
+
+
 ## [0.4.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.0..v0.4.1) - 2025-11-28
 
 
@@ -13,6 +35,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.4.1 - ([aeb0094](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/aeb0094422000b2cd29ecb2813fe784a47a9bf47))
 - Remove dead code - ([8327f69](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/8327f69c90205a0c97fe1c68de1b8abbc68cbed4))
 
 ### 🚜 Refactoring
