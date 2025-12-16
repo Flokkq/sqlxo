@@ -28,10 +28,10 @@ where
 }
 
 pub struct DeleteQueryPlan<'a, C: QueryContext> {
-	pub(crate) where_expr:           Option<Expression<C::Query>>,
-	pub(crate) table:                &'a str,
-	pub(crate) is_soft:              bool,
-	pub(crate) delete_marker_field:  Option<&'a str>,
+	pub(crate) where_expr:          Option<Expression<C::Query>>,
+	pub(crate) table:               &'a str,
+	pub(crate) is_soft:             bool,
+	pub(crate) delete_marker_field: Option<&'a str>,
 }
 
 impl<'a, C> DeleteQueryPlan<'a, C>
@@ -39,7 +39,8 @@ where
 	C: QueryContext,
 {
 	fn to_query_builder(&self) -> sqlx::QueryBuilder<'static, Postgres> {
-		let head = DeleteHead::new(self.table, self.is_soft, self.delete_marker_field);
+		let head =
+			DeleteHead::new(self.table, self.is_soft, self.delete_marker_field);
 		let mut w = SqlWriter::new(head);
 
 		if let Some(e) = &self.where_expr {
@@ -172,7 +173,8 @@ where
 			table:               C::TABLE,
 			where_expr:          None,
 			is_soft:             <C::Model as crate::Deletable>::IS_SOFT_DELETE,
-			delete_marker_field: <C::Model as crate::Deletable>::DELETE_MARKER_FIELD,
+			delete_marker_field:
+				<C::Model as crate::Deletable>::DELETE_MARKER_FIELD,
 		}
 	}
 

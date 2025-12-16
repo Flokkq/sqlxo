@@ -20,8 +20,7 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub trait BuildableInsertQuery<C>:
-	Buildable<C, Plan: Planable<C>>
+pub trait BuildableInsertQuery<C>: Buildable<C, Plan: Planable<C>>
 where
 	C: QueryContext,
 {
@@ -91,7 +90,9 @@ where
 	{
 		self.to_query_builder()
 			.push(" RETURNING *")
-			.build_query_as::<C::Model>().fetch_one(exec).await
+			.build_query_as::<C::Model>()
+			.fetch_one(exec)
+			.await
 	}
 
 	async fn fetch_all<'e, E>(
@@ -103,7 +104,9 @@ where
 	{
 		self.to_query_builder()
 			.push(" RETURNING *")
-			.build_query_as::<C::Model>().fetch_all(exec).await
+			.build_query_as::<C::Model>()
+			.fetch_all(exec)
+			.await
 	}
 
 	async fn fetch_optional<'e, E>(
@@ -114,8 +117,8 @@ where
 		E: Executor<'e, Database = Postgres>,
 	{
 		self.to_query_builder()
-		.push(" RETURNING *")
-		.build_query_as::<C::Model>()
+			.push(" RETURNING *")
+			.build_query_as::<C::Model>()
 			.fetch_optional(exec)
 			.await
 	}
@@ -133,7 +136,7 @@ where
 	C::Model: Creatable,
 {
 	pub(crate) table:               &'a str,
-	pub(crate) create_model:        Option<<C::Model as Creatable>::CreateModel>,
+	pub(crate) create_model: Option<<C::Model as Creatable>::CreateModel>,
 	pub(crate) insert_marker_field: Option<&'static str>,
 }
 

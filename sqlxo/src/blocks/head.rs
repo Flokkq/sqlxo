@@ -132,14 +132,12 @@ impl<'a> Display for DeleteHead<'a> {
 }
 
 pub struct UpdateHead<'a> {
-	table:              &'a str,
+	table: &'a str,
 }
 
 impl<'a> UpdateHead<'a> {
 	pub fn new(table: &'a str) -> Self {
-		Self {
-			table,
-		}
+		Self { table }
 	}
 }
 

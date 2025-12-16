@@ -1,14 +1,22 @@
+use crate::helpers::{
+	CreateItem,
+	CreateItemCreate,
+	NormalizeString,
+};
+use sqlxo::{
+	Buildable,
+	Creatable,
+	QueryBuilder,
+};
 use uuid::Uuid;
-use sqlxo::{Buildable, Creatable, QueryBuilder};
-use crate::helpers::{CreateItem,CreateItemCreate, NormalizeString};
 
 #[test]
 fn test_create_struct_generated() {
 	let create = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "new item".into(),
+		id:          Uuid::new_v4(),
+		name:        "new item".into(),
 		description: "new desc".into(),
-		price: 99.99,
+		price:       99.99,
 	};
 
 	assert_eq!(create.name, "new item");
@@ -27,18 +35,17 @@ fn test_insert_sql_exact_match() {
 	let test_id = Uuid::new_v4();
 
 	let create = CreateItemCreate {
-		id: test_id,
-		name: "test".into(),
+		id:          test_id,
+		name:        "test".into(),
 		description: "desc".into(),
-		price: 99.99,
+		price:       99.99,
 	};
 
-	let plan = QueryBuilder::<CreateItem>::insert()
-		.model(create)
-		.build();
+	let plan = QueryBuilder::<CreateItem>::insert().model(create).build();
 
 	assert_eq!(
 		plan.sql().normalize(),
-		"INSERT INTO create_item (id, name, description, price, created_at) VALUES ($1, $2, $3, $4, NOW())"
+		"INSERT INTO create_item (id, name, description, price, created_at) \
+		 VALUES ($1, $2, $3, $4, NOW())"
 	);
 }

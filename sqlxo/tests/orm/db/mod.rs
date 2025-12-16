@@ -1,3 +1,9 @@
+use crate::helpers::{
+	HardDeleteItem,
+	HardDeleteItemQuery,
+	SoftDeleteItem,
+	SoftDeleteItemQuery,
+};
 use claims::assert_some_eq;
 use sqlx::migrate;
 use sqlx::postgres::PgConnectOptions;
@@ -14,11 +20,10 @@ use sqlxo::blocks::Pagination;
 use sqlxo::or;
 use sqlxo::order_by;
 use sqlxo::Buildable;
+use sqlxo::ExecutablePlan;
 use sqlxo::FetchablePlan;
 use sqlxo::QueryBuilder;
 use uuid::Uuid;
-use crate::helpers::{HardDeleteItem, HardDeleteItemQuery, SoftDeleteItem, SoftDeleteItemQuery};
-use sqlxo::ExecutablePlan;
 
 use crate::helpers::Item;
 use crate::helpers::ItemQuery;
@@ -179,8 +184,10 @@ async fn query_exists() {
 	assert!(exists);
 }
 
-
-async fn insert_hard_delete_item(item: &HardDeleteItem, pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn insert_hard_delete_item(
+	item: &HardDeleteItem,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
 	sqlx::query(
 		r#"
 		INSERT INTO hard_delete_item (id, name, description, price)
@@ -196,7 +203,10 @@ async fn insert_hard_delete_item(item: &HardDeleteItem, pool: &PgPool) -> Result
 	.map(|_| ())
 }
 
-async fn insert_soft_delete_item(item: &SoftDeleteItem, pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn insert_soft_delete_item(
+	item: &SoftDeleteItem,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
 	sqlx::query(
 		r#"
 		INSERT INTO soft_delete_item (id, name, description, price, deleted_at)
@@ -320,9 +330,16 @@ async fn hard_delete_multiple_items() {
 	assert_eq!(remaining[0].id, item3.id);
 }
 
-use crate::helpers::{UpdateItem, UpdateItemQuery, UpdateItemUpdate};
+use crate::helpers::{
+	UpdateItem,
+	UpdateItemQuery,
+	UpdateItemUpdate,
+};
 
-async fn insert_update_item(item: &UpdateItem, pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn insert_update_item(
+	item: &UpdateItem,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
 	sqlx::query(
 		r#"
 		INSERT INTO update_item (id, name, description, price, updated_at)
@@ -373,9 +390,9 @@ async fn update_item_all_fields() {
 	insert_update_item(&item, &pool).await.unwrap();
 
 	let update = UpdateItemUpdate {
-		name: Some("completely new".into()),
+		name:        Some("completely new".into()),
 		description: Some("brand new description".into()),
-		price: Some(999.99),
+		price:       Some(999.99),
 	};
 
 	let updated: UpdateItem = QueryBuilder::<UpdateItem>::update()
@@ -499,7 +516,9 @@ async fn update_item_multiple_with_returning() {
 
 	let updated_items: Vec<UpdateItem> = QueryBuilder::<UpdateItem>::update()
 		.model(update)
-		.r#where(Expression::Leaf(UpdateItemQuery::DescriptionEq("old".into())))
+		.r#where(Expression::Leaf(UpdateItemQuery::DescriptionEq(
+			"old".into(),
+		)))
 		.build()
 		.fetch_all(&pool)
 		.await
@@ -537,13 +556,14 @@ async fn soft_delete_sets_marker() {
 	assert!(after.is_none());
 
 	// But should appear when including deleted
-	let with_deleted: Option<SoftDeleteItem> = QueryBuilder::<SoftDeleteItem>::read()
-		.include_deleted()
-		.r#where(Expression::Leaf(SoftDeleteItemQuery::IdEq(item.id)))
-		.build()
-		.fetch_optional(&pool)
-		.await
-		.unwrap();
+	let with_deleted: Option<SoftDeleteItem> =
+		QueryBuilder::<SoftDeleteItem>::read()
+			.include_deleted()
+			.r#where(Expression::Leaf(SoftDeleteItemQuery::IdEq(item.id)))
+			.build()
+			.fetch_optional(&pool)
+			.await
+			.unwrap();
 
 	assert!(with_deleted.is_some());
 	let retrieved = with_deleted.unwrap();
@@ -583,11 +603,12 @@ async fn soft_delete_filters_by_default() {
 	insert_soft_delete_item(&deleted_item, &pool).await.unwrap();
 
 	// Default query should only return active
-	let active_items: Vec<SoftDeleteItem> = QueryBuilder::<SoftDeleteItem>::read()
-		.build()
-		.fetch_all(&pool)
-		.await
-		.unwrap();
+	let active_items: Vec<SoftDeleteItem> =
+		QueryBuilder::<SoftDeleteItem>::read()
+			.build()
+			.fetch_all(&pool)
+			.await
+			.unwrap();
 
 	assert_eq!(active_items.len(), 1);
 	assert_eq!(active_items[0].id, active_item.id);
@@ -620,7 +641,9 @@ async fn soft_delete_with_where_clause() {
 
 	// Soft delete only items matching criteria
 	let deleted = QueryBuilder::<SoftDeleteItem>::delete()
-		.r#where(Expression::Leaf(SoftDeleteItemQuery::NameEq("delete me".into())))
+		.r#where(Expression::Leaf(SoftDeleteItemQuery::NameEq(
+			"delete me".into(),
+		)))
 		.build()
 		.execute(&pool)
 		.await
@@ -699,17 +722,21 @@ async fn soft_delete_fetch_page_excludes_deleted() {
 	assert_eq!(page.items.len(), 2);
 }
 
-use crate::helpers::{CreateItem, CreateItemCreate, CreateItemQuery};
+use crate::helpers::{
+	CreateItem,
+	CreateItemCreate,
+	CreateItemQuery,
+};
 
 #[tokio::test]
 async fn insert_item_basic() {
 	let pool = get_connection_pool().await;
 
 	let create = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "new item".into(),
+		id:          Uuid::new_v4(),
+		name:        "new item".into(),
 		description: "a fresh item".into(),
-		price: 49.99,
+		price:       49.99,
 	};
 
 	let inserted: CreateItem = QueryBuilder::<CreateItem>::insert()
@@ -735,10 +762,10 @@ async fn insert_item_with_execute() {
 	let pool = get_connection_pool().await;
 
 	let create = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "execute test".into(),
+		id:          Uuid::new_v4(),
+		name:        "execute test".into(),
 		description: "testing execute".into(),
-		price: 29.99,
+		price:       29.99,
 	};
 
 	let rows_affected = QueryBuilder::<CreateItem>::insert()
@@ -767,10 +794,10 @@ async fn insert_item_marker_timestamp_auto_set() {
 	let pool = get_connection_pool().await;
 
 	let create = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "marker test".into(),
+		id:          Uuid::new_v4(),
+		name:        "marker test".into(),
 		description: "testing created_at".into(),
-		price: 99.99,
+		price:       99.99,
 	};
 
 	let inserted: CreateItem = QueryBuilder::<CreateItem>::insert()
@@ -791,24 +818,24 @@ async fn insert_multiple_items() {
 	let pool = get_connection_pool().await;
 
 	let create1 = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "item 1".into(),
+		id:          Uuid::new_v4(),
+		name:        "item 1".into(),
 		description: "first".into(),
-		price: 10.0,
+		price:       10.0,
 	};
 
 	let create2 = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "item 2".into(),
+		id:          Uuid::new_v4(),
+		name:        "item 2".into(),
 		description: "second".into(),
-		price: 20.0,
+		price:       20.0,
 	};
 
 	let create3 = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "item 3".into(),
+		id:          Uuid::new_v4(),
+		name:        "item 3".into(),
 		description: "third".into(),
-		price: 30.0,
+		price:       30.0,
 	};
 
 	// Insert all three
@@ -853,10 +880,10 @@ async fn insert_then_read_and_verify() {
 	let pool = get_connection_pool().await;
 
 	let create = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "verify item".into(),
+		id:          Uuid::new_v4(),
+		name:        "verify item".into(),
 		description: "for verification".into(),
-		price: 77.77,
+		price:       77.77,
 	};
 
 	// Insert
@@ -882,7 +909,9 @@ async fn insert_then_read_and_verify() {
 	assert_eq!(retrieved.price, inserted.price);
 
 	// Timestamps should be very close (both set by DB)
-	let diff = (retrieved.created_at - inserted.created_at).num_milliseconds().abs();
+	let diff = (retrieved.created_at - inserted.created_at)
+		.num_milliseconds()
+		.abs();
 	assert!(diff < 1000); // Within 1 second
 }
 
@@ -891,10 +920,10 @@ async fn insert_with_special_characters() {
 	let pool = get_connection_pool().await;
 
 	let create = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "Special \"Item\" with 'quotes'".into(),
+		id:          Uuid::new_v4(),
+		name:        "Special \"Item\" with 'quotes'".into(),
 		description: "Has $pecial ch@rs & symbols!".into(),
-		price: 12.34,
+		price:       12.34,
 	};
 
 	let inserted: CreateItem = QueryBuilder::<CreateItem>::insert()
@@ -913,18 +942,19 @@ async fn insert_fetch_optional() {
 	let pool = get_connection_pool().await;
 
 	let create = CreateItemCreate {
-		id: Uuid::new_v4(),
-		name: "optional test".into(),
+		id:          Uuid::new_v4(),
+		name:        "optional test".into(),
 		description: "testing fetch_optional".into(),
-		price: 55.55,
+		price:       55.55,
 	};
 
-	let maybe_inserted: Option<CreateItem> = QueryBuilder::<CreateItem>::insert()
-		.model(create.clone())
-		.build()
-		.fetch_optional(&pool)
-		.await
-		.unwrap();
+	let maybe_inserted: Option<CreateItem> =
+		QueryBuilder::<CreateItem>::insert()
+			.model(create.clone())
+			.build()
+			.fetch_optional(&pool)
+			.await
+			.unwrap();
 
 	assert!(maybe_inserted.is_some());
 	let inserted = maybe_inserted.unwrap();
@@ -955,7 +985,8 @@ async fn insert_creates_new_record() {
 
 	// Verify the item was created
 	let inserted: CreateItem = sqlx::query_as(
-		"SELECT id, name, description, price, created_at FROM create_item WHERE id = $1"
+		"SELECT id, name, description, price, created_at FROM create_item \
+		 WHERE id = $1",
 	)
 	.bind(id)
 	.fetch_one(&pool)
@@ -1030,17 +1061,17 @@ async fn insert_multiple_items_with_fetch_all() {
 	let id2 = Uuid::new_v4();
 
 	let create1 = CreateItemCreate {
-		id: id1,
-		name: "item 1".into(),
+		id:          id1,
+		name:        "item 1".into(),
 		description: "first".into(),
-		price: 10.0,
+		price:       10.0,
 	};
 
 	let create2 = CreateItemCreate {
-		id: id2,
-		name: "item 2".into(),
+		id:          id2,
+		name:        "item 2".into(),
 		description: "second".into(),
-		price: 20.0,
+		price:       20.0,
 	};
 
 	// Insert both items
@@ -1060,7 +1091,8 @@ async fn insert_multiple_items_with_fetch_all() {
 
 	// Fetch all items
 	let all_items: Vec<CreateItem> = sqlx::query_as(
-		"SELECT id, name, description, price, created_at FROM create_item ORDER BY price"
+		"SELECT id, name, description, price, created_at FROM create_item \
+		 ORDER BY price",
 	)
 	.fetch_all(&pool)
 	.await
@@ -1083,12 +1115,13 @@ async fn insert_with_fetch_optional_returns_some() {
 		price: 15.75,
 	};
 
-	let maybe_created: Option<CreateItem> = QueryBuilder::<CreateItem>::insert()
-		.model(create)
-		.build()
-		.fetch_optional(&pool)
-		.await
-		.unwrap();
+	let maybe_created: Option<CreateItem> =
+		QueryBuilder::<CreateItem>::insert()
+			.model(create)
+			.build()
+			.fetch_optional(&pool)
+			.await
+			.unwrap();
 
 	assert!(maybe_created.is_some());
 	let created = maybe_created.unwrap();

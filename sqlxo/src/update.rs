@@ -4,8 +4,8 @@ use sqlx::{
 };
 use sqlxo_traits::{
 	QueryContext,
-	UpdateModel,
 	Updatable,
+	UpdateModel,
 };
 
 use crate::{
@@ -57,7 +57,9 @@ where
 			qb.push(" = NOW()");
 		}
 
-		let _ = self.update_model.apply_updates(w.query_builder_mut(), has_marker);
+		let _ = self
+			.update_model
+			.apply_updates(w.query_builder_mut(), has_marker);
 
 		if let Some(e) = &self.where_expr {
 			w.push_where(e);
@@ -218,4 +220,3 @@ where
 	C::Model: Updatable,
 {
 }
-

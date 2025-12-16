@@ -10,8 +10,11 @@ use sqlxo::{
 	SoftDelete,
 	WebQuery,
 };
+use sqlxo_macros::{
+	Create,
+	Update,
+};
 use uuid::Uuid;
-use sqlxo_macros::{Create, Update};
 
 pub trait NormalizeString {
 	fn normalize(&self) -> String;
@@ -119,7 +122,8 @@ pub struct SoftDeleteItem {
 	pub description: String,
 	pub price:       f32,
 	#[sqlxo(delete_marker)]
-	pub deleted_at:  Option<sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>>,
+	pub deleted_at:
+		Option<sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>>,
 }
 
 impl Default for SoftDeleteItem {

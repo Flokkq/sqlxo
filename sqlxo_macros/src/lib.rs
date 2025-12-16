@@ -196,11 +196,14 @@ fn extract_table_name(input: &DeriveInput) -> syn::Result<Option<String>> {
 	Ok(value)
 }
 
-fn extract_marker_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> syn::Result<MarkerFields> {
+fn extract_marker_fields(
+	fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+) -> syn::Result<MarkerFields> {
 	let mut markers = MarkerFields::new();
 
 	for field in fields.iter() {
-		let field_name = field.ident.as_ref().unwrap().to_string().to_snake_case();
+		let field_name =
+			field.ident.as_ref().unwrap().to_string().to_snake_case();
 
 		for attr in &field.attrs {
 			if !attr.path.is_ident("sqlxo") {
@@ -218,7 +221,9 @@ fn extract_marker_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 
 			for nested in list.nested {
 				match nested {
-					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("delete_marker") => {
+					NestedMeta::Meta(Meta::Path(path))
+						if path.is_ident("delete_marker") =>
+					{
 						if markers.delete_marker.is_some() {
 							return Err(syn::Error::new_spanned(
 								attr,
@@ -227,7 +232,9 @@ fn extract_marker_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 						}
 						markers.delete_marker = Some(field_name.clone());
 					}
-					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("update_marker") => {
+					NestedMeta::Meta(Meta::Path(path))
+						if path.is_ident("update_marker") =>
+					{
 						if markers.update_marker.is_some() {
 							return Err(syn::Error::new_spanned(
 								attr,
@@ -236,7 +243,9 @@ fn extract_marker_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 						}
 						markers.update_marker = Some(field_name.clone());
 					}
-					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("insert_marker") => {
+					NestedMeta::Meta(Meta::Path(path))
+						if path.is_ident("insert_marker") =>
+					{
 						if markers.insert_marker.is_some() {
 							return Err(syn::Error::new_spanned(
 								attr,
@@ -260,7 +269,7 @@ struct FkSpec {
 	right_table:     String,
 	right_pk:        String,
 	#[allow(dead_code)] // Will be used for future cascade behavior
-	cascade_type:    Option<CascadeType>,
+	cascade_type: Option<CascadeType>,
 }
 
 fn build_join_codegen(
@@ -443,17 +452,23 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 							if inner_list.path.is_ident("cascade_type") =>
 						{
 							for inner_nested in inner_list.nested {
-								if let NestedMeta::Meta(Meta::Path(path)) = inner_nested {
+								if let NestedMeta::Meta(Meta::Path(path)) =
+									inner_nested
+								{
 									if path.is_ident("cascade") {
-										cascade_type = Some(CascadeType::Cascade);
+										cascade_type =
+											Some(CascadeType::Cascade);
 									} else if path.is_ident("restrict") {
-										cascade_type = Some(CascadeType::Restrict);
+										cascade_type =
+											Some(CascadeType::Restrict);
 									} else if path.is_ident("set_null") {
-										cascade_type = Some(CascadeType::SetNull);
+										cascade_type =
+											Some(CascadeType::SetNull);
 									} else {
 										return Error::new_spanned(
 											path,
-											"unknown cascade type; expected cascade, restrict, or set_null",
+											"unknown cascade type; expected \
+											 cascade, restrict, or set_null",
 										)
 										.to_compile_error()
 										.into();
@@ -1100,7 +1115,9 @@ enum PrimaryKeyMode {
 	GeneratedSequence(String),
 }
 
-fn extract_primary_key_mode(field: &syn::Field) -> syn::Result<Option<PrimaryKeyMode>> {
+fn extract_primary_key_mode(
+	field: &syn::Field,
+) -> syn::Result<Option<PrimaryKeyMode>> {
 	for attr in &field.attrs {
 		if !attr.path.is_ident("primary_key") {
 			continue;
@@ -1124,16 +1141,24 @@ fn extract_primary_key_mode(field: &syn::Field) -> syn::Result<Option<PrimaryKey
 			Meta::List(list) => {
 				for nested in list.nested {
 					match nested {
-						NestedMeta::Meta(Meta::Path(path)) if path.is_ident("manual") => {
+						NestedMeta::Meta(Meta::Path(path))
+							if path.is_ident("manual") =>
+						{
 							return Ok(Some(PrimaryKeyMode::Manual));
 						}
 						NestedMeta::Meta(Meta::List(inner_list))
 							if inner_list.path.is_ident("generated") =>
 						{
-							for inner_nested in inner_list.nested {
+							if let Some(inner_nested) =
+								inner_list.nested.into_iter().next()
+							{
 								match inner_nested {
-									NestedMeta::Meta(Meta::Path(path)) if path.is_ident("uuid") => {
-										return Ok(Some(PrimaryKeyMode::GeneratedUuid));
+									NestedMeta::Meta(Meta::Path(path))
+										if path.is_ident("uuid") =>
+									{
+										return Ok(Some(
+											PrimaryKeyMode::GeneratedUuid,
+										));
 									}
 									NestedMeta::Meta(Meta::NameValue(nv))
 										if nv.path.is_ident("sequence") =>
@@ -1145,10 +1170,12 @@ fn extract_primary_key_mode(field: &syn::Field) -> syn::Result<Option<PrimaryKey
 												)));
 											}
 											other => {
-												return Err(syn::Error::new_spanned(
-													other,
-													r#"expected string literal: #[primary_key(generated(sequence = "seq_name"))]"#,
-												));
+												return Err(
+													syn::Error::new_spanned(
+														other,
+														r#"expected string literal: #[primary_key(generated(sequence = "seq_name"))]"#,
+													),
+												);
 											}
 										}
 									}
@@ -1243,7 +1270,8 @@ pub fn derive_create(input: TokenStream) -> TokenStream {
 		// Skip generated primary keys
 		if let Some(mode) = pk_fields.get(&field_name) {
 			match mode {
-				PrimaryKeyMode::GeneratedUuid | PrimaryKeyMode::GeneratedSequence(_) => {
+				PrimaryKeyMode::GeneratedUuid |
+				PrimaryKeyMode::GeneratedSequence(_) => {
 					continue;
 				}
 				PrimaryKeyMode::Manual => {
@@ -1253,9 +1281,9 @@ pub fn derive_create(input: TokenStream) -> TokenStream {
 		}
 
 		// Skip all marker fields
-		if Some(&field_name_snake) == markers.delete_marker.as_ref()
-			|| Some(&field_name_snake) == markers.update_marker.as_ref()
-			|| Some(&field_name_snake) == markers.insert_marker.as_ref()
+		if Some(&field_name_snake) == markers.delete_marker.as_ref() ||
+			Some(&field_name_snake) == markers.update_marker.as_ref() ||
+			Some(&field_name_snake) == markers.insert_marker.as_ref()
 		{
 			continue;
 		}
@@ -1644,9 +1672,12 @@ pub fn derive_soft_delete(input: TokenStream) -> TokenStream {
 	let fields = match &data.fields {
 		Fields::Named(named) => &named.named,
 		other => {
-			return Error::new_spanned(other, "`SoftDelete` requires named fields")
-				.to_compile_error()
-				.into();
+			return Error::new_spanned(
+				other,
+				"`SoftDelete` requires named fields",
+			)
+			.to_compile_error()
+			.into();
 		}
 	};
 
@@ -1660,7 +1691,8 @@ pub fn derive_soft_delete(input: TokenStream) -> TokenStream {
 		None => {
 			return Error::new_spanned(
 				&input.ident,
-				"`SoftDelete` requires a field marked with #[sqlxo::delete_marker]",
+				"`SoftDelete` requires a field marked with \
+				 #[sqlxo::delete_marker]",
 			)
 			.to_compile_error()
 			.into();
@@ -1737,9 +1769,9 @@ pub fn derive_update(input: TokenStream) -> TokenStream {
 		}
 
 		// Skip markers
-		if Some(&field_name) == markers.delete_marker.as_ref()
-			|| Some(&field_name) == markers.update_marker.as_ref()
-			|| Some(&field_name) == markers.insert_marker.as_ref()
+		if Some(&field_name) == markers.delete_marker.as_ref() ||
+			Some(&field_name) == markers.update_marker.as_ref() ||
+			Some(&field_name) == markers.insert_marker.as_ref()
 		{
 			continue;
 		}
@@ -1752,7 +1784,9 @@ pub fn derive_update(input: TokenStream) -> TokenStream {
 		field_names.push(field_ident);
 	}
 
-	let update_marker_field = markers.update_marker.map(|f| quote! { Some(#f) })
+	let update_marker_field = markers
+		.update_marker
+		.map(|f| quote! { Some(#f) })
 		.unwrap_or_else(|| quote! { None });
 
 	let out = quote! {

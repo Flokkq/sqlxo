@@ -3,9 +3,9 @@ use sqlx::{
 	Postgres,
 };
 use sqlxo_traits::{
+	GetDeleteMarker,
 	QueryContext,
 	SqlWrite,
-	GetDeleteMarker,
 };
 
 use crate::{
