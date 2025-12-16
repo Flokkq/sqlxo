@@ -1,5 +1,5 @@
 [package]
-name = "exampls"
+name = "sqlxo_examples"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
