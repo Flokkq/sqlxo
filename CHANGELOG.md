@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.4.4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.3..v0.4.4) - 2025-12-16
+
+
+
+
+### 🔧Chores
+
+- Lint and reformat - ([80679dc](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/80679dc16b7ccf869d93dd294ea22c5840279e83))
+
+
 ## [0.4.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.2..v0.4.3) - 2025-12-16
 
 
@@ -17,6 +27,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.4.3 - ([e8c5d52](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/e8c5d520f18a2c2aa1665ee46a2dd298b463ba55))
 - Update README - ([32e2e51](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/32e2e51ffa51bb04dfa03219a2a261049b59fdb2))
 - *(examples)* Rename package - ([4eb9c37](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/4eb9c37d03a641b0def875c0ee4075d6d66172da))
 
