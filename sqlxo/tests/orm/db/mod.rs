@@ -698,3 +698,426 @@ async fn soft_delete_fetch_page_excludes_deleted() {
 	assert_eq!(page.total, 2);
 	assert_eq!(page.items.len(), 2);
 }
+
+use crate::helpers::{CreateItem, CreateItemCreate, CreateItemQuery};
+
+#[tokio::test]
+async fn insert_item_basic() {
+	let pool = get_connection_pool().await;
+
+	let create = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "new item".into(),
+		description: "a fresh item".into(),
+		price: 49.99,
+	};
+
+	let inserted: CreateItem = QueryBuilder::<CreateItem>::insert()
+		.model(create.clone())
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(inserted.id, create.id);
+	assert_eq!(inserted.name, create.name);
+	assert_eq!(inserted.description, create.description);
+	assert_eq!(inserted.price, create.price);
+
+	// Verify created_at was set
+	let now = chrono::Utc::now();
+	let diff = (now - inserted.created_at).num_seconds().abs();
+	assert!(diff < 5); // Within 5 seconds
+}
+
+#[tokio::test]
+async fn insert_item_with_execute() {
+	let pool = get_connection_pool().await;
+
+	let create = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "execute test".into(),
+		description: "testing execute".into(),
+		price: 29.99,
+	};
+
+	let rows_affected = QueryBuilder::<CreateItem>::insert()
+		.model(create.clone())
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(rows_affected, 1);
+
+	// Verify item was actually inserted
+	let retrieved: CreateItem = QueryBuilder::<CreateItem>::read()
+		.r#where(Expression::Leaf(CreateItemQuery::IdEq(create.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(retrieved.id, create.id);
+	assert_eq!(retrieved.name, create.name);
+}
+
+#[tokio::test]
+async fn insert_item_marker_timestamp_auto_set() {
+	let pool = get_connection_pool().await;
+
+	let create = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "marker test".into(),
+		description: "testing created_at".into(),
+		price: 99.99,
+	};
+
+	let inserted: CreateItem = QueryBuilder::<CreateItem>::insert()
+		.model(create)
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	// created_at should be set automatically
+	let now = chrono::Utc::now();
+	let diff = (now - inserted.created_at).num_seconds().abs();
+	assert!(diff < 5); // Within 5 seconds
+}
+
+#[tokio::test]
+async fn insert_multiple_items() {
+	let pool = get_connection_pool().await;
+
+	let create1 = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "item 1".into(),
+		description: "first".into(),
+		price: 10.0,
+	};
+
+	let create2 = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "item 2".into(),
+		description: "second".into(),
+		price: 20.0,
+	};
+
+	let create3 = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "item 3".into(),
+		description: "third".into(),
+		price: 30.0,
+	};
+
+	// Insert all three
+	QueryBuilder::<CreateItem>::insert()
+		.model(create1.clone())
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	QueryBuilder::<CreateItem>::insert()
+		.model(create2.clone())
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	QueryBuilder::<CreateItem>::insert()
+		.model(create3.clone())
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	// Verify all were inserted
+	let all_items: Vec<CreateItem> = QueryBuilder::<CreateItem>::read()
+		.build()
+		.fetch_all(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(all_items.len(), 3);
+
+	let ids: Vec<Uuid> = all_items.iter().map(|i| i.id).collect();
+	assert!(ids.contains(&create1.id));
+	assert!(ids.contains(&create2.id));
+	assert!(ids.contains(&create3.id));
+}
+
+#[tokio::test]
+async fn insert_then_read_and_verify() {
+	let pool = get_connection_pool().await;
+
+	let create = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "verify item".into(),
+		description: "for verification".into(),
+		price: 77.77,
+	};
+
+	// Insert
+	let inserted: CreateItem = QueryBuilder::<CreateItem>::insert()
+		.model(create.clone())
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	// Read back
+	let retrieved: CreateItem = QueryBuilder::<CreateItem>::read()
+		.r#where(Expression::Leaf(CreateItemQuery::IdEq(create.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	// Should match
+	assert_eq!(retrieved.id, inserted.id);
+	assert_eq!(retrieved.name, inserted.name);
+	assert_eq!(retrieved.description, inserted.description);
+	assert_eq!(retrieved.price, inserted.price);
+
+	// Timestamps should be very close (both set by DB)
+	let diff = (retrieved.created_at - inserted.created_at).num_milliseconds().abs();
+	assert!(diff < 1000); // Within 1 second
+}
+
+#[tokio::test]
+async fn insert_with_special_characters() {
+	let pool = get_connection_pool().await;
+
+	let create = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "Special \"Item\" with 'quotes'".into(),
+		description: "Has $pecial ch@rs & symbols!".into(),
+		price: 12.34,
+	};
+
+	let inserted: CreateItem = QueryBuilder::<CreateItem>::insert()
+		.model(create.clone())
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(inserted.name, create.name);
+	assert_eq!(inserted.description, create.description);
+}
+
+#[tokio::test]
+async fn insert_fetch_optional() {
+	let pool = get_connection_pool().await;
+
+	let create = CreateItemCreate {
+		id: Uuid::new_v4(),
+		name: "optional test".into(),
+		description: "testing fetch_optional".into(),
+		price: 55.55,
+	};
+
+	let maybe_inserted: Option<CreateItem> = QueryBuilder::<CreateItem>::insert()
+		.model(create.clone())
+		.build()
+		.fetch_optional(&pool)
+		.await
+		.unwrap();
+
+	assert!(maybe_inserted.is_some());
+	let inserted = maybe_inserted.unwrap();
+	assert_eq!(inserted.id, create.id);
+	assert_eq!(inserted.name, create.name);
+}
+
+#[tokio::test]
+async fn insert_creates_new_record() {
+	let pool = get_connection_pool().await;
+	let id = Uuid::new_v4();
+
+	let create = CreateItemCreate {
+		id,
+		name: "new item".into(),
+		description: "test description".into(),
+		price: 49.99,
+	};
+
+	let rows_affected = QueryBuilder::<CreateItem>::insert()
+		.model(create)
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(rows_affected, 1);
+
+	// Verify the item was created
+	let inserted: CreateItem = sqlx::query_as(
+		"SELECT id, name, description, price, created_at FROM create_item WHERE id = $1"
+	)
+	.bind(id)
+	.fetch_one(&pool)
+	.await
+	.unwrap();
+
+	assert_eq!(inserted.id, id);
+	assert_eq!(inserted.name, "new item");
+	assert_eq!(inserted.description, "test description");
+	assert_eq!(inserted.price, 49.99);
+}
+
+#[tokio::test]
+async fn insert_with_returning_fetches_created_record() {
+	let pool = get_connection_pool().await;
+	let id = Uuid::new_v4();
+
+	let create = CreateItemCreate {
+		id,
+		name: "returnable item".into(),
+		description: "should return".into(),
+		price: 99.99,
+	};
+
+	let created: CreateItem = QueryBuilder::<CreateItem>::insert()
+		.model(create)
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(created.id, id);
+	assert_eq!(created.name, "returnable item");
+	assert_eq!(created.description, "should return");
+	assert_eq!(created.price, 99.99);
+
+	// Verify created_at is set and recent
+	let now = chrono::Utc::now();
+	let diff = (now - created.created_at).num_seconds().abs();
+	assert!(diff < 5); // Within 5 seconds
+}
+
+#[tokio::test]
+async fn insert_marker_automatically_set() {
+	let pool = get_connection_pool().await;
+	let id = Uuid::new_v4();
+
+	let create = CreateItemCreate {
+		id,
+		name: "marker test".into(),
+		description: "test marker".into(),
+		price: 25.50,
+	};
+
+	let created: CreateItem = QueryBuilder::<CreateItem>::insert()
+		.model(create)
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	// Verify created_at was automatically set to NOW()
+	let now = chrono::Utc::now();
+	let diff = (now - created.created_at).num_seconds().abs();
+	assert!(diff < 5); // Should be very recent (within 5 seconds)
+}
+
+#[tokio::test]
+async fn insert_multiple_items_with_fetch_all() {
+	let pool = get_connection_pool().await;
+	let id1 = Uuid::new_v4();
+	let id2 = Uuid::new_v4();
+
+	let create1 = CreateItemCreate {
+		id: id1,
+		name: "item 1".into(),
+		description: "first".into(),
+		price: 10.0,
+	};
+
+	let create2 = CreateItemCreate {
+		id: id2,
+		name: "item 2".into(),
+		description: "second".into(),
+		price: 20.0,
+	};
+
+	// Insert both items
+	QueryBuilder::<CreateItem>::insert()
+		.model(create1)
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	QueryBuilder::<CreateItem>::insert()
+		.model(create2)
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	// Fetch all items
+	let all_items: Vec<CreateItem> = sqlx::query_as(
+		"SELECT id, name, description, price, created_at FROM create_item ORDER BY price"
+	)
+	.fetch_all(&pool)
+	.await
+	.unwrap();
+
+	assert_eq!(all_items.len(), 2);
+	assert_eq!(all_items[0].name, "item 1");
+	assert_eq!(all_items[1].name, "item 2");
+}
+
+#[tokio::test]
+async fn insert_with_fetch_optional_returns_some() {
+	let pool = get_connection_pool().await;
+	let id = Uuid::new_v4();
+
+	let create = CreateItemCreate {
+		id,
+		name: "optional item".into(),
+		description: "maybe".into(),
+		price: 15.75,
+	};
+
+	let maybe_created: Option<CreateItem> = QueryBuilder::<CreateItem>::insert()
+		.model(create)
+		.build()
+		.fetch_optional(&pool)
+		.await
+		.unwrap();
+
+	assert!(maybe_created.is_some());
+	let created = maybe_created.unwrap();
+	assert_eq!(created.id, id);
+	assert_eq!(created.name, "optional item");
+}
+
+#[tokio::test]
+async fn insert_preserves_all_field_values() {
+	let pool = get_connection_pool().await;
+	let id = Uuid::new_v4();
+
+	let create = CreateItemCreate {
+		id,
+		name: "complete item".into(),
+		description: "full description text".into(),
+		price: 123.45,
+	};
+
+	let created: CreateItem = QueryBuilder::<CreateItem>::insert()
+		.model(create.clone())
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	// Verify all fields match
+	assert_eq!(created.id, create.id);
+	assert_eq!(created.name, create.name);
+	assert_eq!(created.description, create.description);
+	assert_eq!(created.price, create.price);
+}

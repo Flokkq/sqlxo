@@ -49,7 +49,7 @@ enum CascadeType {
 struct MarkerFields {
 	delete_marker: Option<String>,
 	update_marker: Option<String>,
-	create_marker: Option<String>,
+	insert_marker: Option<String>,
 }
 
 impl MarkerFields {
@@ -57,7 +57,7 @@ impl MarkerFields {
 		Self {
 			delete_marker: None,
 			update_marker: None,
-			create_marker: None,
+			insert_marker: None,
 		}
 	}
 }
@@ -222,7 +222,7 @@ fn extract_marker_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 						if markers.delete_marker.is_some() {
 							return Err(syn::Error::new_spanned(
 								attr,
-								"duplicate #[sqlxo::delete_marker]",
+								"duplicate #[sqlxo(delete_marker)]",
 							));
 						}
 						markers.delete_marker = Some(field_name.clone());
@@ -231,19 +231,19 @@ fn extract_marker_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 						if markers.update_marker.is_some() {
 							return Err(syn::Error::new_spanned(
 								attr,
-								"duplicate #[sqlxo::update_marker]",
+								"duplicate #[sqlxo(update_marker)]",
 							));
 						}
 						markers.update_marker = Some(field_name.clone());
 					}
-					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("create_marker") => {
-						if markers.create_marker.is_some() {
+					NestedMeta::Meta(Meta::Path(path)) if path.is_ident("insert_marker") => {
+						if markers.insert_marker.is_some() {
 							return Err(syn::Error::new_spanned(
 								attr,
-								"duplicate #[sqlxo::create_marker]",
+								"duplicate #[sqlxo(insert_marker)]",
 							));
 						}
-						markers.create_marker = Some(field_name.clone());
+						markers.insert_marker = Some(field_name.clone());
 					}
 					_ => {}
 				}
@@ -1093,6 +1093,253 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 	out.into()
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum PrimaryKeyMode {
+	Manual,
+	GeneratedUuid,
+	GeneratedSequence(String),
+}
+
+fn extract_primary_key_mode(field: &syn::Field) -> syn::Result<Option<PrimaryKeyMode>> {
+	for attr in &field.attrs {
+		if !attr.path.is_ident("primary_key") {
+			continue;
+		}
+
+		// Check if it's just #[primary_key] with no arguments
+		let meta = match attr.parse_meta() {
+			Ok(meta) => meta,
+			Err(_) => {
+				// If parsing fails, treat as simple #[primary_key]
+				return Ok(Some(PrimaryKeyMode::Manual));
+			}
+		};
+
+		match meta {
+			// #[primary_key] with no args
+			Meta::Path(_) => {
+				return Ok(Some(PrimaryKeyMode::Manual));
+			}
+			// #[primary_key(manual)] or #[primary_key(generated(...))]
+			Meta::List(list) => {
+				for nested in list.nested {
+					match nested {
+						NestedMeta::Meta(Meta::Path(path)) if path.is_ident("manual") => {
+							return Ok(Some(PrimaryKeyMode::Manual));
+						}
+						NestedMeta::Meta(Meta::List(inner_list))
+							if inner_list.path.is_ident("generated") =>
+						{
+							for inner_nested in inner_list.nested {
+								match inner_nested {
+									NestedMeta::Meta(Meta::Path(path)) if path.is_ident("uuid") => {
+										return Ok(Some(PrimaryKeyMode::GeneratedUuid));
+									}
+									NestedMeta::Meta(Meta::NameValue(nv))
+										if nv.path.is_ident("sequence") =>
+									{
+										match nv.lit {
+											Lit::Str(ref s) => {
+												return Ok(Some(PrimaryKeyMode::GeneratedSequence(
+													s.value(),
+												)));
+											}
+											other => {
+												return Err(syn::Error::new_spanned(
+													other,
+													r#"expected string literal: #[primary_key(generated(sequence = "seq_name"))]"#,
+												));
+											}
+										}
+									}
+									other => {
+										return Err(syn::Error::new_spanned(
+											other,
+											r#"expected `uuid` or `sequence = "..."`"#,
+										));
+									}
+								}
+							}
+						}
+						other => {
+							return Err(syn::Error::new_spanned(
+								other,
+								r#"expected `manual` or `generated(...)`"#,
+							));
+						}
+					}
+				}
+			}
+			other => {
+				return Err(syn::Error::new_spanned(
+					other,
+					r#"expected #[primary_key], #[primary_key(manual)], or #[primary_key(generated(...))]"#,
+				));
+			}
+		}
+	}
+
+	Ok(None)
+}
+
+#[proc_macro_derive(Create, attributes(sqlxo, primary_key, foreign_key))]
+pub fn derive_create(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let root = sqlxo_root();
+
+	let struct_ident = &input.ident;
+	let create_ident = format_ident!("{}Create", struct_ident);
+
+	let data = match &input.data {
+		Data::Struct(s) => s,
+		_ => {
+			return Error::new_spanned(
+				&input.ident,
+				"`Create` supports only structs",
+			)
+			.to_compile_error()
+			.into();
+		}
+	};
+
+	let fields = match &data.fields {
+		Fields::Named(named) => &named.named,
+		other => {
+			return Error::new_spanned(other, "`Create` requires named fields")
+				.to_compile_error()
+				.into();
+		}
+	};
+
+	let markers = match extract_marker_fields(fields) {
+		Ok(m) => m,
+		Err(e) => return e.to_compile_error().into(),
+	};
+
+	// Collect primary key fields and their modes
+	let mut pk_fields = std::collections::HashMap::new();
+	for field in fields.iter() {
+		match extract_primary_key_mode(field) {
+			Ok(Some(mode)) => {
+				let field_name = field.ident.as_ref().unwrap().to_string();
+				pk_fields.insert(field_name, mode);
+			}
+			Ok(None) => {}
+			Err(e) => return e.to_compile_error().into(),
+		}
+	}
+
+	// Generate create struct fields
+	let mut create_fields = Vec::new();
+	let mut field_names = Vec::new();
+	let mut field_names_snake = Vec::new();
+
+	for field in fields.iter() {
+		let field_ident = field.ident.as_ref().unwrap();
+		let field_name = field_ident.to_string();
+		let field_name_snake = field_name.to_snake_case();
+		let ty = &field.ty;
+
+		// Skip generated primary keys
+		if let Some(mode) = pk_fields.get(&field_name) {
+			match mode {
+				PrimaryKeyMode::GeneratedUuid | PrimaryKeyMode::GeneratedSequence(_) => {
+					continue;
+				}
+				PrimaryKeyMode::Manual => {
+					// Include manual primary keys
+				}
+			}
+		}
+
+		// Skip all marker fields
+		if Some(&field_name_snake) == markers.delete_marker.as_ref()
+			|| Some(&field_name_snake) == markers.update_marker.as_ref()
+			|| Some(&field_name_snake) == markers.insert_marker.as_ref()
+		{
+			continue;
+		}
+
+		create_fields.push(quote! {
+			pub #field_ident: #ty
+		});
+		field_names.push(field_ident);
+		field_names_snake.push(field_name_snake);
+	}
+
+	let insert_marker_field = markers
+		.insert_marker
+		.map(|f| quote! { Some(#f) })
+		.unwrap_or_else(|| quote! { None });
+
+	let out = quote! {
+		#[derive(Debug, Clone)]
+		pub struct #create_ident {
+			#(#create_fields),*
+		}
+
+		impl #root::Creatable for #struct_ident {
+			type CreateModel = #create_ident;
+			const INSERT_MARKER_FIELD: Option<&'static str> = #insert_marker_field;
+		}
+
+		impl #root::CreateModel for #create_ident {
+			type Entity = #struct_ident;
+
+			fn apply_inserts(
+				&self,
+				qb: &mut sqlx::QueryBuilder<'static, sqlx::Postgres>,
+				insert_marker_field: Option<&'static str>,
+			) {
+				// Build column list
+				qb.push("(");
+				let mut first = true;
+
+				#(
+					if !first {
+						qb.push(", ");
+					}
+					first = false;
+					qb.push(#field_names_snake);
+				)*
+
+				// Add insert marker column if present
+				if let Some(marker) = insert_marker_field {
+					if !first {
+						qb.push(", ");
+					}
+					qb.push(marker);
+				}
+
+				qb.push(") VALUES (");
+
+				// Build values list with proper bindings
+				let mut first = true;
+
+				#(
+					if !first {
+						qb.push(", ");
+					}
+					first = false;
+					qb.push_bind(self.#field_names.clone());
+				)*
+
+				// Add insert marker value if present
+				if insert_marker_field.is_some() {
+					if !first {
+						qb.push(", ");
+					}
+					qb.push("NOW()");
+				}
+
+				qb.push(")");
+			}
+		}
+	};
+
+	out.into()
+}
+
 #[proc_macro_attribute]
 pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let dto = parse_macro_input!(item as DeriveInput);
@@ -1492,7 +1739,7 @@ pub fn derive_update(input: TokenStream) -> TokenStream {
 		// Skip markers
 		if Some(&field_name) == markers.delete_marker.as_ref()
 			|| Some(&field_name) == markers.update_marker.as_ref()
-			|| Some(&field_name) == markers.create_marker.as_ref()
+			|| Some(&field_name) == markers.insert_marker.as_ref()
 		{
 			continue;
 		}

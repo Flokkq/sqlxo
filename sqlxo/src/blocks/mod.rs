@@ -21,6 +21,7 @@ pub use expression::Expression;
 pub use head::{
 	AggregationType,
 	DeleteHead,
+	InsertHead,
 	ReadHead,
 	SelectType,
 	UpdateHead,

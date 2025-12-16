@@ -148,3 +148,19 @@ impl<'a> ToHead for UpdateHead<'a> {
 		format!("UPDATE {} SET ", self.table).into()
 	}
 }
+
+pub struct InsertHead<'a> {
+	table: &'a str,
+}
+
+impl<'a> InsertHead<'a> {
+	pub fn new(table: &'a str) -> Self {
+		Self { table }
+	}
+}
+
+impl<'a> ToHead for InsertHead<'a> {
+	fn to_head(self) -> Cow<'static, str> {
+		format!("INSERT INTO {} ", self.table).into()
+	}
+}

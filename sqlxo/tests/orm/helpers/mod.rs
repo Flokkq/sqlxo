@@ -11,7 +11,7 @@ use sqlxo::{
 	WebQuery,
 };
 use uuid::Uuid;
-use sqlxo_macros::Update;
+use sqlxo_macros::{Create, Update};
 
 pub trait NormalizeString {
 	fn normalize(&self) -> String;
@@ -155,6 +155,31 @@ impl Default for UpdateItem {
 			description: "test item".into(),
 			price:       75.0,
 			updated_at:  None,
+		}
+	}
+}
+
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, Create, PartialEq)]
+#[sqlxo(table_name = "create_item")]
+pub struct CreateItem {
+	#[primary_key(manual)]
+	pub id:          Uuid,
+	pub name:        String,
+	pub description: String,
+	pub price:       f32,
+	#[sqlxo(insert_marker)]
+	pub created_at:  chrono::DateTime<chrono::Utc>,
+}
+
+impl Default for CreateItem {
+	fn default() -> Self {
+		Self {
+			id:          Uuid::new_v4(),
+			name:        "create test".into(),
+			description: "test item".into(),
+			price:       85.0,
+			created_at:  chrono::Utc::now(),
 		}
 	}
 }

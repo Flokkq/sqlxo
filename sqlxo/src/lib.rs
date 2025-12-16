@@ -23,11 +23,16 @@ pub mod blocks;
 pub mod web;
 
 mod delete;
+mod insert;
 mod read;
 mod update;
 pub use delete::{
 	DeleteQueryBuilder,
 	DeleteQueryPlan,
+};
+pub use insert::{
+	InsertQueryBuilder,
+	InsertQueryPlan,
 };
 pub use read::{
 	ReadQueryBuilder,
@@ -67,6 +72,13 @@ where
 		C::Model: crate::Updatable,
 	{
 		UpdateQueryBuilder::from_ctx()
+	}
+
+	pub fn insert() -> InsertQueryBuilder<'a, C>
+	where
+		C::Model: crate::Creatable,
+	{
+		InsertQueryBuilder::from_ctx()
 	}
 }
 

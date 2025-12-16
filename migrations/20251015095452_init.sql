@@ -40,3 +40,11 @@ CREATE TABLE update_item (
     updated_at TIMESTAMPTZ
 );
 
+CREATE TABLE create_item (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    price REAL NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+

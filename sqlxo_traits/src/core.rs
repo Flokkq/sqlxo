@@ -89,3 +89,18 @@ pub trait UpdateModel: Clone + Send + Sync {
 		has_previous: bool,
 	) -> Vec<&'static str>;
 }
+
+pub trait Creatable {
+	type CreateModel: CreateModel<Entity = Self>;
+	const INSERT_MARKER_FIELD: Option<&'static str>;
+}
+
+pub trait CreateModel: Clone + Send + Sync {
+	type Entity: QueryModel;
+
+	fn apply_inserts(
+		&self,
+		qb: &mut sqlx::QueryBuilder<'static, sqlx::Postgres>,
+		insert_marker_field: Option<&'static str>,
+	);
+}
