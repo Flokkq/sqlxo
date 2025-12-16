@@ -20,7 +20,8 @@ CREATE TABLE hard_delete_item (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL,
-    price REAL NOT NULL
+    price REAL NOT NULL,
+    updated_at TIMESTAMPTZ
 );
 
 CREATE TABLE soft_delete_item (
@@ -29,5 +30,13 @@ CREATE TABLE soft_delete_item (
     description TEXT NOT NULL,
     price REAL NOT NULL,
     deleted_at TIMESTAMPTZ
+);
+
+CREATE TABLE update_item (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    price REAL NOT NULL,
+    updated_at TIMESTAMPTZ
 );
 

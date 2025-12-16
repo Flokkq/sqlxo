@@ -24,6 +24,7 @@ pub mod web;
 
 mod delete;
 mod read;
+mod update;
 pub use delete::{
 	DeleteQueryBuilder,
 	DeleteQueryPlan,
@@ -31,6 +32,10 @@ pub use delete::{
 pub use read::{
 	ReadQueryBuilder,
 	ReadQueryPlan,
+};
+pub use update::{
+	UpdateQueryBuilder,
+	UpdateQueryPlan,
 };
 
 use sqlx::{
@@ -55,6 +60,13 @@ where
 		C::Model: crate::Deletable,
 	{
 		DeleteQueryBuilder::from_ctx()
+	}
+
+	pub fn update() -> UpdateQueryBuilder<'a, C>
+	where
+		C::Model: crate::Updatable,
+	{
+		UpdateQueryBuilder::from_ctx()
 	}
 }
 

@@ -86,13 +86,17 @@ impl<'a> Display for ReadHead<'a> {
 }
 
 pub struct DeleteHead<'a> {
-	r#type:             DeleteType,
-	table:              &'a str,
+	r#type:              DeleteType,
+	table:               &'a str,
 	delete_marker_field: Option<&'a str>,
 }
 
 impl<'a> DeleteHead<'a> {
-	pub fn new(table: &'a str, is_soft: bool, delete_marker_field: Option<&'a str>) -> Self {
+	pub fn new(
+		table: &'a str,
+		is_soft: bool,
+		delete_marker_field: Option<&'a str>,
+	) -> Self {
 		Self {
 			r#type: if is_soft {
 				DeleteType::Soft
@@ -118,15 +122,29 @@ impl<'a> Display for DeleteHead<'a> {
 				write!(f, "DELETE FROM {}", self.table)
 			}
 			DeleteType::Soft => {
-				let field = self.delete_marker_field
+				let field = self
+					.delete_marker_field
 					.expect("Soft delete requires delete_marker_field");
-				write!(
-					f,
-					"UPDATE {} SET {} = NOW()",
-					self.table,
-					field
-				)
+				write!(f, "UPDATE {} SET {} = NOW()", self.table, field)
 			}
 		}
+	}
+}
+
+pub struct UpdateHead<'a> {
+	table:              &'a str,
+}
+
+impl<'a> UpdateHead<'a> {
+	pub fn new(table: &'a str) -> Self {
+		Self {
+			table,
+		}
+	}
+}
+
+impl<'a> ToHead for UpdateHead<'a> {
+	fn to_head(self) -> Cow<'static, str> {
+		format!("UPDATE {} SET ", self.table).into()
 	}
 }

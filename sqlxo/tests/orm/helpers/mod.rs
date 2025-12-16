@@ -11,6 +11,7 @@ use sqlxo::{
 	WebQuery,
 };
 use uuid::Uuid;
+use sqlxo_macros::Update;
 
 pub trait NormalizeString {
 	fn normalize(&self) -> String;
@@ -129,6 +130,31 @@ impl Default for SoftDeleteItem {
 			description: "test item".into(),
 			price:       75.0,
 			deleted_at:  None,
+		}
+	}
+}
+// Update test model
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, Update, PartialEq)]
+#[sqlxo(table_name = "update_item")]
+pub struct UpdateItem {
+	#[primary_key]
+	pub id:          Uuid,
+	pub name:        String,
+	pub description: String,
+	pub price:       f32,
+	#[sqlxo(update_marker)]
+	pub updated_at:  Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl Default for UpdateItem {
+	fn default() -> Self {
+		Self {
+			id:          Uuid::new_v4(),
+			name:        "update test".into(),
+			description: "test item".into(),
+			price:       75.0,
+			updated_at:  None,
 		}
 	}
 }

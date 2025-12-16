@@ -23,6 +23,7 @@ pub use head::{
 	DeleteHead,
 	ReadHead,
 	SelectType,
+	UpdateHead,
 };
 pub use pagination::{
 	Page,
@@ -76,6 +77,11 @@ impl SqlWriter {
 
 	pub fn into_builder(self) -> sqlx::QueryBuilder<'static, Postgres> {
 		self.qb
+	}
+
+	/// Get mutable access to the underlying QueryBuilder for advanced operations
+	pub fn query_builder_mut(&mut self) -> &mut sqlx::QueryBuilder<'static, Postgres> {
+		&mut self.qb
 	}
 
 	pub fn push_joins<J: SqlJoin>(&mut self, joins: &Vec<J>) {

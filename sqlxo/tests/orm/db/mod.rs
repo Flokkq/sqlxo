@@ -320,6 +320,196 @@ async fn hard_delete_multiple_items() {
 	assert_eq!(remaining[0].id, item3.id);
 }
 
+use crate::helpers::{UpdateItem, UpdateItemQuery, UpdateItemUpdate};
+
+async fn insert_update_item(item: &UpdateItem, pool: &PgPool) -> Result<(), sqlx::Error> {
+	sqlx::query(
+		r#"
+		INSERT INTO update_item (id, name, description, price, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+		"#,
+	)
+	.bind(item.id)
+	.bind(&item.name)
+	.bind(&item.description)
+	.bind(item.price)
+	.bind(item.updated_at)
+	.execute(pool)
+	.await
+	.map(|_| ())
+}
+
+#[tokio::test]
+async fn update_item_single_field() {
+	let pool = get_connection_pool().await;
+	let item = UpdateItem::default();
+
+	insert_update_item(&item, &pool).await.unwrap();
+
+	let update = UpdateItemUpdate {
+		name: Some("updated name".into()),
+		..Default::default()
+	};
+
+	let updated: UpdateItem = QueryBuilder::<UpdateItem>::update()
+		.model(update)
+		.r#where(Expression::Leaf(UpdateItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(updated.name, "updated name");
+	assert_eq!(updated.description, item.description);
+	assert_eq!(updated.price, item.price);
+	assert!(updated.updated_at.is_some());
+}
+
+#[tokio::test]
+async fn update_item_all_fields() {
+	let pool = get_connection_pool().await;
+	let item = UpdateItem::default();
+
+	insert_update_item(&item, &pool).await.unwrap();
+
+	let update = UpdateItemUpdate {
+		name: Some("completely new".into()),
+		description: Some("brand new description".into()),
+		price: Some(999.99),
+	};
+
+	let updated: UpdateItem = QueryBuilder::<UpdateItem>::update()
+		.model(update)
+		.r#where(Expression::Leaf(UpdateItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(updated.name, "completely new");
+	assert_eq!(updated.description, "brand new description");
+	assert_eq!(updated.price, 999.99);
+	assert!(updated.updated_at.is_some());
+}
+
+#[tokio::test]
+async fn update_item_marker_timestamp_set() {
+	let pool = get_connection_pool().await;
+	let item = UpdateItem::default();
+
+	insert_update_item(&item, &pool).await.unwrap();
+
+	// Wait a bit to ensure timestamp difference
+	tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+	let update = UpdateItemUpdate {
+		name: Some("trigger marker".into()),
+		..Default::default()
+	};
+
+	let updated: UpdateItem = QueryBuilder::<UpdateItem>::update()
+		.model(update)
+		.r#where(Expression::Leaf(UpdateItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert!(updated.updated_at.is_some());
+	let updated_time = updated.updated_at.unwrap();
+
+	// Should be recent
+	let now = chrono::Utc::now();
+	let diff = (now - updated_time).num_seconds().abs();
+	assert!(diff < 5); // Within 5 seconds
+}
+
+#[tokio::test]
+async fn update_item_with_where_price() {
+	let pool = get_connection_pool().await;
+	let item1 = UpdateItem {
+		name: "cheap".into(),
+		price: 10.0,
+		..Default::default()
+	};
+	let item2 = UpdateItem {
+		name: "expensive".into(),
+		price: 200.0,
+		..Default::default()
+	};
+
+	insert_update_item(&item1, &pool).await.unwrap();
+	insert_update_item(&item2, &pool).await.unwrap();
+
+	// Update only cheap items
+	let update = UpdateItemUpdate {
+		description: Some("budget option".into()),
+		..Default::default()
+	};
+
+	let count = QueryBuilder::<UpdateItem>::update()
+		.model(update)
+		.r#where(Expression::Leaf(UpdateItemQuery::PriceLt(50.0)))
+		.build()
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(count, 1);
+
+	// Verify only item1 was updated
+	let updated1: UpdateItem = QueryBuilder::<UpdateItem>::read()
+		.r#where(Expression::Leaf(UpdateItemQuery::IdEq(item1.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(updated1.description, "budget option");
+
+	let unchanged2: UpdateItem = QueryBuilder::<UpdateItem>::read()
+		.r#where(Expression::Leaf(UpdateItemQuery::IdEq(item2.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_ne!(unchanged2.description, "budget option");
+}
+
+#[tokio::test]
+async fn update_item_multiple_with_returning() {
+	let pool = get_connection_pool().await;
+	let item1 = UpdateItem {
+		description: "old".into(),
+		..Default::default()
+	};
+	let item2 = UpdateItem {
+		description: "old".into(),
+		..Default::default()
+	};
+
+	insert_update_item(&item1, &pool).await.unwrap();
+	insert_update_item(&item2, &pool).await.unwrap();
+
+	let update = UpdateItemUpdate {
+		description: Some("refreshed".into()),
+		..Default::default()
+	};
+
+	let updated_items: Vec<UpdateItem> = QueryBuilder::<UpdateItem>::update()
+		.model(update)
+		.r#where(Expression::Leaf(UpdateItemQuery::DescriptionEq("old".into())))
+		.build()
+		.fetch_all(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(updated_items.len(), 2);
+	assert!(updated_items.iter().all(|i| i.description == "refreshed"));
+	assert!(updated_items.iter().all(|i| i.updated_at.is_some()));
+}
+
 #[tokio::test]
 async fn soft_delete_sets_marker() {
 	let pool = get_connection_pool().await;

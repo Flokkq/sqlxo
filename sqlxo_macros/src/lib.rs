@@ -1522,16 +1522,16 @@ pub fn derive_update(input: TokenStream) -> TokenStream {
 		impl #root::UpdateModel for #update_ident {
 			type Entity = #struct_ident;
 
-			fn apply_updates(&self, qb: &mut sqlx::QueryBuilder<'static, sqlx::Postgres>) -> Vec<&'static str> {
+			fn apply_updates(&self, qb: &mut sqlx::QueryBuilder<'static, sqlx::Postgres>, has_previous: bool) -> Vec<&'static str> {
 				let mut set_fields = Vec::new();
-				let mut first = true;
+				let mut needs_comma = has_previous;
 
 				#(
 					if let Some(ref val) = self.#field_names {
-						if !first {
+						if needs_comma {
 							qb.push(", ");
 						}
-						first = false;
+						needs_comma = true;
 
 						qb.push(stringify!(#field_names));
 						qb.push(" = ");
