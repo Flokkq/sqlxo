@@ -1,6 +1,26 @@
 # Changelog
 
 
+## [0.4.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.2..v0.4.3) - 2025-12-16
+
+
+
+
+### ✨ Features
+
+- *(insert)* Implement insert flow - ([4cc495e](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/4cc495e542879734e27f966a5996a2277b8dedc0))
+- *(update)* Implement update flow - ([93a20fe](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/93a20fefae55a22099c1ddcdaf4b587b881b1de4))
+
+### 🐛 Bug Fixes
+
+- *(tests)* Make test-utils default feature and scope ignore-db-tests feature correctly - ([0267865](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/0267865d0b36b1e98ea194081fd3c1254547ae43))
+
+### 🔧Chores
+
+- Update README - ([32e2e51](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/32e2e51ffa51bb04dfa03219a2a261049b59fdb2))
+- *(examples)* Rename package - ([4eb9c37](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/4eb9c37d03a641b0def875c0ee4075d6d66172da))
+
+
 ## [0.4.2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.1..v0.4.2) - 2025-12-15
 
 
@@ -16,6 +36,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.4.2 - ([0e174f2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/0e174f2dcb7f96749ba4a70014426f7247dd4a1b))
 - *(cargo)* Rename workspace package to sqlxo workspace - ([9bb70b4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/9bb70b42b0995ac3faa149b9bada545c97179674))
 
 ### 🚜 Refactoring
