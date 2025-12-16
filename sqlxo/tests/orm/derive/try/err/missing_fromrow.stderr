@@ -2,8 +2,13 @@ error[E0277]: the trait bound `for<'r> T: sqlx_core::from_row::FromRow<'r, sqlx_
  --> tests/orm/derive/try/err/missing_fromrow.rs:5:12
   |
 5 | pub struct T {
-  |            ^ the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
+  |            ^ unsatisfied trait bound
   |
+help: the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
+ --> tests/orm/derive/try/err/missing_fromrow.rs:5:1
+  |
+5 | pub struct T {
+  | ^^^^^^^^^^^^
   = help: the following other types implement trait `sqlx_core::from_row::FromRow<'r, R>`:
             ()
             (T1, T2)
@@ -25,8 +30,13 @@ error[E0277]: the trait bound `for<'r> T: sqlx_core::from_row::FromRow<'r, sqlx_
  --> tests/orm/derive/try/err/missing_fromrow.rs:5:12
   |
 5 | pub struct T {
-  |            ^ the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
+  |            ^ unsatisfied trait bound
   |
+help: the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
+ --> tests/orm/derive/try/err/missing_fromrow.rs:5:1
+  |
+5 | pub struct T {
+  | ^^^^^^^^^^^^
   = help: the following other types implement trait `sqlx_core::from_row::FromRow<'r, R>`:
             ()
             (T1, T2)
@@ -48,8 +58,13 @@ error[E0277]: the trait bound `for<'r> T: sqlx_core::from_row::FromRow<'r, sqlx_
  --> tests/orm/derive/try/err/missing_fromrow.rs:5:12
   |
 5 | pub struct T {
-  |            ^ the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
+  |            ^ unsatisfied trait bound
   |
+help: the trait `for<'r> sqlx_core::from_row::FromRow<'r, sqlx_postgres::row::PgRow>` is not implemented for `T`
+ --> tests/orm/derive/try/err/missing_fromrow.rs:5:1
+  |
+5 | pub struct T {
+  | ^^^^^^^^^^^^
   = help: the following other types implement trait `sqlx_core::from_row::FromRow<'r, R>`:
             ()
             (T1, T2)

@@ -24,13 +24,9 @@
           devShells.default = mkShell rec {
             buildInputs =
               [
-                (rust-bin.selectLatestNightlyWith (toolchain:
-                  toolchain.default.override {
-                    extensions = ["rust-src" "rust-analyzer"];
-                    targets = [];
-                  }))
-
-                rustup
+                (rust-bin.nightly."2025-12-15".default.override {
+                  extensions = ["rust-src" "rust-analyzer"];
+                })
 
                 cargo-watch
                 cargo-tarpaulin
@@ -53,7 +49,6 @@
               ];
 
             LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
-            RUSTUP_TOOLCHAIN = "nightly";
             REQWEST_USE_RUSTLS = 1;
             CURL_SSL_BACKEND = "secure_transport";
             SWAGGER_UI_SKIP_SSL_CHECK = 1;
