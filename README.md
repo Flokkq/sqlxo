@@ -8,12 +8,11 @@ Type-safe SQL query building on top of `sqlx`, driven by auto-generated enums fr
 > This crate is still under development. Currently `sqlxo` does not follow SemVer and can have broken releases or skip versions, due to trouble in the release workflow.
 > Once `sqlxo` hits v1.0.0 it will be considered stable and follow SemVer.
 
-sqlxo supports basic features of an ORM and RESTful queries that get converted into database queries. Both features are still early in development and lack important features
+sqlxo supports basic features of an ORM (basic CRUD) and RESTful queries that get converted into database queries. Both features are still early in development and lack important features
 - aggregations
 - joins
 - permissions
 - caching
-- currently only supports READ operations
 
 ## Examples
 
