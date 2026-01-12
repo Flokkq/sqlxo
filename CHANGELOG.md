@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.5.4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.3..v0.5.4) - 2026-01-12
+
+
+
+
+### ✨ Features
+
+- *(web)* Add send and sync constraints to traits - ([9a3737d](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/9a3737dcd602ee62269b7d0c407d25407dc1701a))
+
+
 ## [0.5.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.2..v0.5.3) - 2026-01-12
 
 
@@ -9,6 +19,10 @@
 ### 🐛 Bug Fixes
 
 - Test naming - ([36aee54](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/36aee548a48f98cfe9f560817b63a1fc82ba6961))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.5.3 - ([947e827](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/947e827bda7bd90d456ab9e71ecff0054edd9115))
 
 
 ## [0.5.2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.1..v0.5.2) - 2026-01-12
