@@ -8,7 +8,11 @@ use utoipa::{
 	ToSchema,
 };
 
-pub trait WebLeaf: Clone + Serialize + ToSchema + PartialSchema {}
+pub trait WebLeaf:
+	Clone + Send + Sync + Serialize + ToSchema + PartialSchema
+{
+}
+
 impl<T> WebLeaf for T where
 	T: Clone
 		+ Send
@@ -20,7 +24,10 @@ impl<T> WebLeaf for T where
 {
 }
 
-pub trait WebSortField: Clone + Serialize + ToSchema + PartialSchema {}
+pub trait WebSortField:
+	Clone + Send + Sync + Serialize + ToSchema + PartialSchema
+{
+}
 impl<T> WebSortField for T where
 	T: Clone
 		+ Serialize
