@@ -1215,7 +1215,7 @@ pub fn derive_create(input: TokenStream) -> TokenStream {
 	let root = sqlxo_root();
 
 	let struct_ident = &input.ident;
-	let create_ident = format_ident!("{}Create", struct_ident);
+	let create_ident = format_ident!("{}Creation", struct_ident);
 
 	let data = match &input.data {
 		Data::Struct(s) => s,

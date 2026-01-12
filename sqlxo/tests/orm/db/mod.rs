@@ -725,7 +725,7 @@ async fn soft_delete_fetch_page_excludes_deleted() {
 
 use crate::helpers::{
 	CreateItem,
-	CreateItemCreate,
+	CreateItemCreation,
 	CreateItemQuery,
 };
 
@@ -733,7 +733,7 @@ use crate::helpers::{
 async fn insert_item_basic() {
 	let pool = get_connection_pool().await;
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "new item".into(),
 		description: "a fresh item".into(),
@@ -762,7 +762,7 @@ async fn insert_item_basic() {
 async fn insert_item_with_execute() {
 	let pool = get_connection_pool().await;
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "execute test".into(),
 		description: "testing execute".into(),
@@ -794,7 +794,7 @@ async fn insert_item_with_execute() {
 async fn insert_item_marker_timestamp_auto_set() {
 	let pool = get_connection_pool().await;
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "marker test".into(),
 		description: "testing created_at".into(),
@@ -818,21 +818,21 @@ async fn insert_item_marker_timestamp_auto_set() {
 async fn insert_multiple_items() {
 	let pool = get_connection_pool().await;
 
-	let create1 = CreateItemCreate {
+	let create1 = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "item 1".into(),
 		description: "first".into(),
 		price:       10.0,
 	};
 
-	let create2 = CreateItemCreate {
+	let create2 = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "item 2".into(),
 		description: "second".into(),
 		price:       20.0,
 	};
 
-	let create3 = CreateItemCreate {
+	let create3 = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "item 3".into(),
 		description: "third".into(),
@@ -880,7 +880,7 @@ async fn insert_multiple_items() {
 async fn insert_then_read_and_verify() {
 	let pool = get_connection_pool().await;
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "verify item".into(),
 		description: "for verification".into(),
@@ -920,7 +920,7 @@ async fn insert_then_read_and_verify() {
 async fn insert_with_special_characters() {
 	let pool = get_connection_pool().await;
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "Special \"Item\" with 'quotes'".into(),
 		description: "Has $pecial ch@rs & symbols!".into(),
@@ -942,7 +942,7 @@ async fn insert_with_special_characters() {
 async fn insert_fetch_optional() {
 	let pool = get_connection_pool().await;
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "optional test".into(),
 		description: "testing fetch_optional".into(),
@@ -968,7 +968,7 @@ async fn insert_creates_new_record() {
 	let pool = get_connection_pool().await;
 	let id = Uuid::new_v4();
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id,
 		name: "new item".into(),
 		description: "test description".into(),
@@ -1005,7 +1005,7 @@ async fn insert_with_returning_fetches_created_record() {
 	let pool = get_connection_pool().await;
 	let id = Uuid::new_v4();
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id,
 		name: "returnable item".into(),
 		description: "should return".into(),
@@ -1035,7 +1035,7 @@ async fn insert_marker_automatically_set() {
 	let pool = get_connection_pool().await;
 	let id = Uuid::new_v4();
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id,
 		name: "marker test".into(),
 		description: "test marker".into(),
@@ -1061,14 +1061,14 @@ async fn insert_multiple_items_with_fetch_all() {
 	let id1 = Uuid::new_v4();
 	let id2 = Uuid::new_v4();
 
-	let create1 = CreateItemCreate {
+	let create1 = CreateItemCreation {
 		id:          id1,
 		name:        "item 1".into(),
 		description: "first".into(),
 		price:       10.0,
 	};
 
-	let create2 = CreateItemCreate {
+	let create2 = CreateItemCreation {
 		id:          id2,
 		name:        "item 2".into(),
 		description: "second".into(),
@@ -1109,7 +1109,7 @@ async fn insert_with_fetch_optional_returns_some() {
 	let pool = get_connection_pool().await;
 	let id = Uuid::new_v4();
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id,
 		name: "optional item".into(),
 		description: "maybe".into(),
@@ -1135,7 +1135,7 @@ async fn insert_preserves_all_field_values() {
 	let pool = get_connection_pool().await;
 	let id = Uuid::new_v4();
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id,
 		name: "complete item".into(),
 		description: "full description text".into(),

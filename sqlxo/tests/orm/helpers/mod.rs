@@ -171,7 +171,7 @@ impl Default for UpdateItem {
 #[allow(dead_code)]
 #[derive(Debug, FromRow, Clone, Query, Create, PartialEq)]
 #[sqlxo(table_name = "create_item")]
-pub struct CreateItem {
+pub struct CreateItemCreation {
 	#[primary_key(manual)]
 	pub id:          Uuid,
 	pub name:        String,

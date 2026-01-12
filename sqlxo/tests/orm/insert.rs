@@ -1,6 +1,6 @@
 use crate::helpers::{
 	CreateItem,
-	CreateItemCreate,
+	CreateItemCreation,
 	NormalizeString,
 };
 use sqlxo::{
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 #[test]
 fn test_create_struct_generated() {
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          Uuid::new_v4(),
 		name:        "new item".into(),
 		description: "new desc".into(),
@@ -34,7 +34,7 @@ fn test_create_derives_creatable() {
 fn test_insert_sql_exact_match() {
 	let test_id = Uuid::new_v4();
 
-	let create = CreateItemCreate {
+	let create = CreateItemCreation {
 		id:          test_id,
 		name:        "test".into(),
 		description: "desc".into(),
