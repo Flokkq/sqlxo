@@ -10,13 +10,25 @@ use utoipa::{
 
 pub trait WebLeaf: Clone + Serialize + ToSchema + PartialSchema {}
 impl<T> WebLeaf for T where
-	T: Clone + Serialize + for<'de> Deserialize<'de> + ToSchema + PartialSchema
+	T: Clone
+		+ Send
+		+ Sync
+		+ Serialize
+		+ for<'de> Deserialize<'de>
+		+ ToSchema
+		+ PartialSchema
 {
 }
 
 pub trait WebSortField: Clone + Serialize + ToSchema + PartialSchema {}
 impl<T> WebSortField for T where
-	T: Clone + Serialize + for<'de> Deserialize<'de> + ToSchema + PartialSchema
+	T: Clone
+		+ Serialize
+		+ for<'de> Deserialize<'de>
+		+ ToSchema
+		+ PartialSchema
+		+ Send
+		+ Sync
 {
 }
 
