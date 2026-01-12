@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.5.2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.1..v0.5.2) - 2026-01-12
+
+
+
+
+### 🚜 Refactoring
+
+- *(insert)* Rename Create derive output struct to {}Creation - ([884958d](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/884958de2b4ec8459acfba08d03412cad6427d31))
+
+
 ## [0.5.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.0..v0.5.1) - 2026-01-12
 
 
@@ -9,6 +19,10 @@
 ### ✨ Features
 
 - *(update)* Add ignore attribute for single fields - ([3325d96](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/3325d965a8650fdf8eb1c63432e771ef5c5a0cd3))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.5.1 - ([41805c8](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/41805c8b12933acb094282c477a7aca8f2023b93))
 
 
 ## [0.5.0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.5..v0.5.0) - 2025-12-16
