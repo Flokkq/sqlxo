@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.5.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.0..v0.5.1) - 2026-01-12
+
+
+
+
+### ✨ Features
+
+- *(update)* Add ignore attribute for single fields - ([3325d96](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/3325d965a8650fdf8eb1c63432e771ef5c5a0cd3))
+
+
 ## [0.5.0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.4.5..v0.5.0) - 2025-12-16
 
 
@@ -8,6 +18,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.5.0 - ([ad7d2be](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/ad7d2bec2e7bb3e592a84a7a33332fd328830acf))
 - Rust 1.94.0-nightly - ([c5ea3ee](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/c5ea3ee82a007cf0edc09632b23a97cdfc09f801))
 
 
