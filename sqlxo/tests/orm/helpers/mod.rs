@@ -147,18 +147,23 @@ pub struct UpdateItem {
 	pub name:        String,
 	pub description: String,
 	pub price:       f32,
+
+	#[sqlxo(update_ignore)]
+	pub ignored_field: String,
+
 	#[sqlxo(update_marker)]
-	pub updated_at:  Option<chrono::DateTime<chrono::Utc>>,
+	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Default for UpdateItem {
 	fn default() -> Self {
 		Self {
-			id:          Uuid::new_v4(),
-			name:        "update test".into(),
-			description: "test item".into(),
-			price:       75.0,
-			updated_at:  None,
+			id:            Uuid::new_v4(),
+			name:          "update test".into(),
+			description:   "test item".into(),
+			ignored_field: "ignored".into(),
+			price:         75.0,
+			updated_at:    None,
 		}
 	}
 }

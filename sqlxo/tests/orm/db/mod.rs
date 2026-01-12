@@ -342,14 +342,15 @@ async fn insert_update_item(
 ) -> Result<(), sqlx::Error> {
 	sqlx::query(
 		r#"
-		INSERT INTO update_item (id, name, description, price, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO update_item (id, name, description, price, ignored_field, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		"#,
 	)
 	.bind(item.id)
 	.bind(&item.name)
 	.bind(&item.description)
 	.bind(item.price)
+    .bind(&item.ignored_field)
 	.bind(item.updated_at)
 	.execute(pool)
 	.await

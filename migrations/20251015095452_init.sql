@@ -37,6 +37,7 @@ CREATE TABLE update_item (
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     price REAL NOT NULL,
+    ignored_field TEXT NOT NULL,
     updated_at TIMESTAMPTZ
 );
 
@@ -47,4 +48,3 @@ CREATE TABLE create_item (
     price REAL NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-

@@ -1776,6 +1776,48 @@ pub fn derive_update(input: TokenStream) -> TokenStream {
 			continue;
 		}
 
+		// Skip fields marked as update_ignore
+		let mut update_ignore = false;
+		for attr in &field.attrs {
+			if !attr.path.is_ident("sqlxo") {
+				continue;
+			}
+
+			let meta = match attr.parse_meta() {
+				Ok(m) => m,
+				Err(_) => {
+					return Error::new_spanned(
+						attr,
+						"invalid #[sqlxo] attribute",
+					)
+					.to_compile_error()
+					.into();
+				}
+			};
+
+			let list = match meta {
+				Meta::List(list) => list,
+				_ => continue,
+			};
+
+			for nested in list.nested {
+				if let NestedMeta::Meta(Meta::Path(path)) = nested {
+					if path.is_ident("update_ignore") {
+						update_ignore = true;
+						break;
+					}
+				}
+			}
+
+			if update_ignore {
+				break;
+			}
+		}
+
+		if update_ignore {
+			continue;
+		}
+
 		// Wrap field type in Option
 		// If already Option<T>, wrap as Option<Option<T>>
 		update_fields.push(quote! {
