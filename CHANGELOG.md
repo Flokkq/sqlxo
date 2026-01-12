@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.5.5](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.4..v0.5.5) - 2026-01-12
+
+
+
+
+### 🐛 Bug Fixes
+
+- *(web)* Add send + ssync constraints to trait definition not only to blanket impl - ([bedd3b1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/bedd3b151ad09fa97266516a5d5784c66c2d8237))
+
+
 ## [0.5.4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.3..v0.5.4) - 2026-01-12
 
 
@@ -9,6 +19,10 @@
 ### ✨ Features
 
 - *(web)* Add send and sync constraints to traits - ([9a3737d](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/9a3737dcd602ee62269b7d0c407d25407dc1701a))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.5.4 - ([72bba53](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/72bba538701c76b02c30cf45dbeaf4cc2e0312e2))
 
 
 ## [0.5.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.2..v0.5.3) - 2026-01-12
