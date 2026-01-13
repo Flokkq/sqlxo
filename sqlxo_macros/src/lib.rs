@@ -961,6 +961,23 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		let leaf_variant_ident = format_ident!("{}", fname_pascal);
 		let sort_variant_ident = format_ident!("{}", fname_pascal);
 
+		let mut bool_field: Option<String> = None;
+		for attr in &f.attrs {
+			if attr.path.is_ident("sqlxo") {
+				if let Ok(Meta::List(list)) = attr.parse_meta() {
+					for nested in list.nested {
+						if let NestedMeta::Meta(Meta::NameValue(nv)) = nested {
+							if nv.path.is_ident("bool_from_nullable") {
+								if let Lit::Str(ref s) = nv.lit {
+									bool_field = Some(s.value());
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
 		let op_def = match classify_type(ty) {
 			Kind::String => quote! {
 				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
@@ -975,14 +992,28 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 				}
 			},
 
-			Kind::Bool => quote! {
-				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
-				#[serde(untagged)]
-				pub enum #op_ident {
-					IsTrue  { is_true: bool },
-					IsFalse { is_false: bool },
+			Kind::Bool => {
+				let doc_attr = if bool_field.is_some() {
+					let bf = bool_field.as_ref().unwrap();
+					format!(
+						"This boolean maps to the presence of `{}` (IS NOT \
+						 NULL / IS NULL).",
+						bf
+					)
+				} else {
+					"Boolean filter".to_string()
+				};
+
+				quote! {
+					#[doc = #doc_attr]
+					#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+					#[serde(untagged)]
+					pub enum #op_ident {
+						IsTrue  { is_true: bool },
+						IsFalse { is_false: bool },
+					}
 				}
-			},
+			}
 
 			Kind::Number => quote! {
 				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
@@ -1014,7 +1045,6 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
 				#[serde(untagged)]
 				pub enum #op_ident {
-					// Backward-compatible alias; maps to Eq
 					On         { on: #ty },
 					Eq         { eq: #ty },
 					Neq        { neq: #ty },
