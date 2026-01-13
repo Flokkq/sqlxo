@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.5.7](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.6..v0.5.7) - 2026-01-13
+
+
+
+
+### 🐛 Bug Fixes
+
+- Fix linting errors - ([5829543](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/5829543eca5462a279eae6e9ad3b5322f3a9c5ce))
+
+
 ## [0.5.6](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.5..v0.5.6) - 2026-01-13
 
 
@@ -9,6 +19,10 @@
 ### ✨ Features
 
 - *(webquery)* Add attribute to map a nullable to boolean query - ([43d7dd0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/43d7dd05c98758e8959838332a56177c1ee5aace))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.5.6 - ([86f806f](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/86f806f25656826fbd80ac1e2b971d94132e4f1d))
 
 
 ## [0.5.5](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.4..v0.5.5) - 2026-01-12
