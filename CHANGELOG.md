@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.5.6](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.5..v0.5.6) - 2026-01-13
+
+
+
+
+### ✨ Features
+
+- *(webquery)* Add attribute to map a nullable to boolean query - ([43d7dd0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/43d7dd05c98758e8959838332a56177c1ee5aace))
+
+
 ## [0.5.5](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.4..v0.5.5) - 2026-01-12
 
 
@@ -9,6 +19,10 @@
 ### 🐛 Bug Fixes
 
 - *(web)* Add send + ssync constraints to trait definition not only to blanket impl - ([bedd3b1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/bedd3b151ad09fa97266516a5d5784c66c2d8237))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.5.5 - ([852b896](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/852b89606bb4d3749ae5e67176010b099e587fed))
 
 
 ## [0.5.4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.3..v0.5.4) - 2026-01-12
