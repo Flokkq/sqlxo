@@ -993,8 +993,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 			},
 
 			Kind::Bool => {
-				let doc_attr = if bool_field.is_some() {
-					let bf = bool_field.as_ref().unwrap();
+				let doc_attr = if let Some(bf) = bool_field {
 					format!(
 						"This boolean maps to the presence of `{}` (IS NOT \
 						 NULL / IS NULL).",
