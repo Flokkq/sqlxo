@@ -75,6 +75,9 @@ pub struct ItemDto {
 	pub amount:         i32,
 	pub active:         bool,
 	pub due_date:       sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
+
+	#[sqlxo(webquery_ignore)]
+	pub ignore:         Vec<i32>,
 }
 
 #[allow(dead_code)]

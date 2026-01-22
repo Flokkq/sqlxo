@@ -952,6 +952,39 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		let fname_pascal = fname_snake.to_pascal_case();
 		let ty = &f.ty;
 
+		let mut webquery_ignore = false;
+		let mut bool_field: Option<String> = None;
+
+		for attr in &f.attrs {
+			if attr.path.is_ident("sqlxo") {
+				if let Ok(Meta::List(list)) = attr.parse_meta() {
+					for nested in list.nested {
+						match nested {
+							NestedMeta::Meta(Meta::Path(p))
+								if p.is_ident("webquery_ignore") =>
+							{
+								webquery_ignore = true;
+							}
+
+							NestedMeta::Meta(Meta::NameValue(nv))
+								if nv.path.is_ident("bool_from_nullable") =>
+							{
+								if let Lit::Str(ref s) = nv.lit {
+									bool_field = Some(s.value());
+								}
+							}
+
+							_ => {}
+						}
+					}
+				}
+			}
+		}
+
+		if webquery_ignore {
+			continue;
+		}
+
 		let op_ident = format_ident!("{}{}Op", struct_ident, fname_pascal);
 		let leaf_wrap_ident =
 			format_ident!("{}Leaf{}", struct_ident, fname_pascal);
@@ -960,23 +993,6 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 
 		let leaf_variant_ident = format_ident!("{}", fname_pascal);
 		let sort_variant_ident = format_ident!("{}", fname_pascal);
-
-		let mut bool_field: Option<String> = None;
-		for attr in &f.attrs {
-			if attr.path.is_ident("sqlxo") {
-				if let Ok(Meta::List(list)) = attr.parse_meta() {
-					for nested in list.nested {
-						if let NestedMeta::Meta(Meta::NameValue(nv)) = nested {
-							if nv.path.is_ident("bool_from_nullable") {
-								if let Lit::Str(ref s) = nv.lit {
-									bool_field = Some(s.value());
-								}
-							}
-						}
-					}
-				}
-			}
-		}
 
 		let op_def = match classify_type(ty) {
 			Kind::String => quote! {
@@ -1440,6 +1456,8 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		let ty = &field.ty;
 
 		let mut target_snake = fname_snake.clone();
+		let mut webquery_ignore = false;
+
 		for attr in &field.attrs {
 			if attr.path.is_ident("sqlxo") {
 				let meta = match attr.parse_meta() {
@@ -1483,6 +1501,28 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 								}
 							}
 						}
+						NestedMeta::Meta(Meta::Path(p))
+							if p.is_ident("webquery_ignore") ||
+								p.is_ident("webquer_ignore") =>
+						{
+							webquery_ignore = true;
+						}
+						// optional: #[sqlxo(webquery_ignore = true)]
+						NestedMeta::Meta(Meta::NameValue(nv))
+							if nv.path.is_ident("webquery_ignore") =>
+						{
+							match nv.lit {
+								Lit::Bool(b) => webquery_ignore = b.value,
+								other => {
+									return Error::new_spanned(
+										other,
+										r#"expected bool literal: #[sqlxo(webquery_ignore = true)]"#,
+									)
+									.to_compile_error()
+									.into();
+								}
+							}
+						}
 						NestedMeta::Meta(Meta::NameValue(nv)) => {
 							return Error::new_spanned(
 								nv,
@@ -1502,6 +1542,10 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 					}
 				}
 			}
+		}
+
+		if webquery_ignore {
+			continue;
 		}
 		let target_pascal = target_snake.to_pascal_case();
 
