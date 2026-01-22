@@ -1,6 +1,20 @@
 # Changelog
 
 
+## [0.5.8](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.7..v0.5.8) - 2026-01-22
+
+
+
+
+### ✨ Features
+
+- *(webquery)* Add attribute to ignore field in Webquery derive - ([a8e270c](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/a8e270cf3ec24ee2af7e1faa12f266daee355ea0))
+
+### 🔧Chores
+
+- Remove dead packages from flake - ([f3ae258](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/f3ae2587c300cf750f425ef81d9365a22c7abc17))
+
+
 ## [0.5.7](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.6..v0.5.7) - 2026-01-13
 
 
@@ -9,6 +23,10 @@
 ### 🐛 Bug Fixes
 
 - Fix linting errors - ([5829543](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/5829543eca5462a279eae6e9ad3b5322f3a9c5ce))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.5.7 - ([35efc69](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/35efc691ee3337e3e5327c421a278576ba10e332))
 
 
 ## [0.5.6](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.5..v0.5.6) - 2026-01-13
