@@ -28,30 +28,20 @@
                   extensions = ["rust-src" "rust-analyzer"];
                 })
 
-                cargo-watch
-                cargo-tarpaulin
-                cargo-deny
-                cargo-edit
                 clippy
                 typos
                 git-cliff
 
                 # dev
                 pkg-config
-                openssl
-                cacert
                 sqlx-cli
                 postgresql_16
-                dotenvx
               ]
               ++ pkgs.lib.optionals pkg.stdenv.isDarwin [
                 darwin.apple_sdk.frameworks.SystemConfiguration
               ];
 
             LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
-            REQWEST_USE_RUSTLS = 1;
-            CURL_SSL_BACKEND = "secure_transport";
-            SWAGGER_UI_SKIP_SSL_CHECK = 1;
           };
         }
     );
