@@ -16,7 +16,6 @@ use sqlxo::{
 	JoinKind,
 	QueryBuilder,
 	ReadQueryPlan,
-	SelectionList,
 	UpdateQueryPlan,
 };
 use uuid::Uuid;
@@ -99,7 +98,11 @@ fn insert_builder_allows_custom_row_type() {
 			.take(sqlxo::take!(crate::helpers::CreateItemColumn::Id))
 			.build();
 
-	assert!(plan.sql().contains("INSERT INTO create_item"));
+	assert_eq!(
+		plan.sql().normalize(),
+		"INSERT INTO create_item (id, name, description, price, created_at) \
+		 VALUES ($1, $2, $3, $4, NOW())"
+	);
 }
 
 #[test]
@@ -118,5 +121,8 @@ fn update_builder_allows_custom_row_type() {
 			))
 			.build();
 
-	assert!(plan.sql().contains("UPDATE update_item SET"));
+	assert_eq!(
+		plan.sql().normalize(),
+		"UPDATE update_item SET updated_at = NOW(), name = $1"
+	);
 }

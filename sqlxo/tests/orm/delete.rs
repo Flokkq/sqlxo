@@ -13,6 +13,7 @@ use sqlxo::{
 	SoftDelete,
 };
 use uuid::Uuid;
+use crate::helpers::NormalizeString;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, FromRow, Query, Delete)]
@@ -80,10 +81,8 @@ fn test_hard_delete_sql_generation() {
 		.r#where(Expression::Leaf(HardDeleteItemQuery::NameEq("test".into())))
 		.build();
 
-	let sql = plan.sql();
-	assert!(sql.contains("DELETE FROM hard_item"));
-	assert!(sql.contains("WHERE"));
-	assert!(sql.contains("name ="));
+	let sql = plan.sql().normalize();
+	assert_eq!(sql, "DELETE FROM hard_item WHERE name = $1");
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -98,10 +97,8 @@ fn test_soft_delete_sql_generation() {
 		.r#where(Expression::Leaf(SoftDeleteItemQuery::NameEq("test".into())))
 		.build();
 
-	let sql = plan.sql();
-	assert!(sql.contains("UPDATE soft_item SET deleted_at = NOW()"));
-	assert!(sql.contains("WHERE"));
-	assert!(sql.contains("name ="));
+	let sql = plan.sql().normalize();
+	assert_eq!(sql, "UPDATE soft_item SET deleted_at = NOW() WHERE name = $1");
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -118,10 +115,11 @@ fn test_read_excludes_soft_deleted() {
 		.r#where(Expression::Leaf(SoftDeleteItemQuery::NameEq("test".into())))
 		.build();
 
-	let sql = plan.sql(SelectType::Star);
-	assert!(sql.contains("WHERE deleted_at IS NULL"));
-	assert!(sql.contains("AND"));
-	assert!(sql.contains("name ="));
+	let sql = plan.sql(SelectType::Star).normalize();
+	assert_eq!(
+		sql,
+		"SELECT * FROM soft_item WHERE deleted_at IS NULL AND (name = $1)"
+	);
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -138,10 +136,8 @@ fn test_read_includes_soft_deleted_when_requested() {
 		.r#where(Expression::Leaf(SoftDeleteItemQuery::NameEq("test".into())))
 		.build();
 
-	let sql = plan.sql(SelectType::Star);
-	assert!(!sql.contains("deleted_at IS NULL"));
-	assert!(sql.contains("WHERE"));
-	assert!(sql.contains("name ="));
+	let sql = plan.sql(SelectType::Star).normalize();
+	assert_eq!(sql, "SELECT * FROM soft_item WHERE name = $1");
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -157,11 +153,8 @@ fn test_read_hard_delete_no_filter() {
 		.r#where(Expression::Leaf(HardDeleteItemQuery::NameEq("test".into())))
 		.build();
 
-	let sql = plan.sql(SelectType::Star);
-	assert!(!sql.contains("deleted_at IS NULL"));
-	assert!(!sql.contains("created_at IS NULL"));
-	assert!(sql.contains("WHERE"));
-	assert!(sql.contains("name ="));
+	let sql = plan.sql(SelectType::Star).normalize();
+	assert_eq!(sql, "SELECT * FROM hard_item WHERE name = $1");
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -169,9 +162,8 @@ fn test_read_hard_delete_no_filter() {
 fn test_soft_delete_without_where() {
 	let plan = QueryBuilder::<SoftDeleteItem>::delete().build();
 
-	let sql = plan.sql();
-	assert!(sql.contains("UPDATE soft_item SET deleted_at = NOW()"));
-	assert!(!sql.contains("WHERE"));
+	let sql = plan.sql().normalize();
+	assert_eq!(sql, "UPDATE soft_item SET deleted_at = NOW()");
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -181,6 +173,6 @@ fn test_read_soft_delete_without_where() {
 
 	let plan = QueryBuilder::<SoftDeleteItem>::read().build();
 
-	let sql = plan.sql(SelectType::Star);
-	assert!(sql.contains("WHERE deleted_at IS NULL"));
+	let sql = plan.sql(SelectType::Star).normalize();
+	assert_eq!(sql, "SELECT * FROM soft_item WHERE deleted_at IS NULL");
 }
