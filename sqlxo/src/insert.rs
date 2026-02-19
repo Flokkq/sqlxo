@@ -44,7 +44,7 @@ pub struct InsertQueryPlan<
 	pub(crate) table: &'a str,
 	pub(crate) create_model: <C::Model as Creatable>::CreateModel,
 	pub(crate) insert_marker_field: Option<&'static str>,
-	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	pub(crate) selection: Option<SelectionList<Row>>,
 	row: PhantomData<Row>,
 }
 
@@ -152,7 +152,7 @@ pub struct InsertQueryBuilder<
 	pub(crate) table: &'a str,
 	pub(crate) create_model: Option<<C::Model as Creatable>::CreateModel>,
 	pub(crate) insert_marker_field: Option<&'static str>,
-	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	pub(crate) selection: Option<SelectionList<Row>>,
 	row: PhantomData<Row>,
 }
 
@@ -212,7 +212,7 @@ where
 {
 	pub fn take<NewRow>(
 		self,
-		selection: SelectionList<C::Model, NewRow>,
+		selection: SelectionList<NewRow>,
 	) -> InsertQueryBuilder<'a, C, NewRow>
 	where
 		NewRow: Send

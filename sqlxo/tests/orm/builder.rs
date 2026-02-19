@@ -151,3 +151,24 @@ fn update_builder_allows_custom_row_type() {
 		"UPDATE update_item SET updated_at = NOW(), name = $1"
 	);
 }
+
+#[test]
+fn read_builder_supports_take_with_join_columns() {
+	let plan: ReadQueryPlan<Item, (Uuid, Uuid)> = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Inner)
+		.take(sqlxo::take!(
+			crate::helpers::Item::ItemId,
+			crate::helpers::Material::MaterialId
+		))
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).trim_start().normalize(),
+		r#"
+            SELECT "item"."id", "material__"."id"
+            FROM item
+            INNER JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
+        "#
+		.normalize()
+	);
+}

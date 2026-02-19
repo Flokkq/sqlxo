@@ -1,3 +1,4 @@
+use smallvec::SmallVec;
 use std::marker::PhantomData;
 
 use sqlx::{
@@ -22,13 +23,17 @@ use crate::{
 		Expression,
 		Page,
 		Pagination,
+		QualifiedColumn,
 		ReadHead,
 		SelectType,
 		SortOrder,
 		SqlWriter,
 	},
 	order_by,
-	select::SelectionList,
+	select::{
+		SelectionColumn,
+		SelectionList,
+	},
 	Buildable,
 	ExecutablePlan,
 	FetchablePlan,
@@ -58,8 +63,80 @@ pub struct ReadQueryPlan<'a, C: QueryContext, Row = <C as QueryContext>::Model>
 	pub(crate) table: &'a str,
 	pub(crate) include_deleted: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
-	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	pub(crate) selection: Option<SelectionList<Row>>,
 	row: PhantomData<Row>,
+}
+
+fn build_alias_lookup(
+	joins: Option<&[JoinPath]>,
+) -> Vec<(&'static str, String)> {
+	let mut aliases = Vec::new();
+
+	if let Some(paths) = joins {
+		for path in paths {
+			let mut alias_prefix = String::new();
+			for segment in path.segments() {
+				alias_prefix.push_str(segment.descriptor.alias_segment);
+				aliases.push((
+					segment.descriptor.right_table,
+					alias_prefix.clone(),
+				));
+			}
+		}
+	}
+
+	aliases
+}
+
+fn resolve_alias_for_table(
+	table: &'static str,
+	column: &'static str,
+	base_table: &str,
+	aliases: &[(&'static str, String)],
+) -> String {
+	if table == base_table {
+		return base_table.to_string();
+	}
+
+	let mut matches =
+		aliases.iter().filter(|(tbl, _)| *tbl == table).peekable();
+
+	let Some((_, alias)) = matches.next() else {
+		panic!(
+			"`take!` requested column `{table}.{column}` but `{table}` is not \
+			 part of the join set"
+		);
+	};
+
+	if matches.peek().is_some() {
+		panic!(
+			"`take!` requested column `{table}.{column}` but `{table}` is \
+			 joined multiple times; disambiguation is not implemented yet"
+		);
+	}
+
+	alias.clone()
+}
+
+fn resolve_selection_columns(
+	selection: &[SelectionColumn],
+	base_table: &str,
+	joins: Option<&[JoinPath]>,
+) -> SmallVec<[QualifiedColumn; 4]> {
+	let aliases = build_alias_lookup(joins);
+	let mut resolved = SmallVec::new();
+
+	for col in selection {
+		let table_alias = resolve_alias_for_table(
+			col.table, col.column, base_table, &aliases,
+		);
+		resolved.push(QualifiedColumn {
+			table_alias,
+			column: col.column,
+		});
+	}
+
+	resolved
 }
 
 impl<'a, C, Row> ReadQueryPlan<'a, C, Row>
@@ -107,7 +184,13 @@ where
 			SelectType::Star => self
 				.selection
 				.as_ref()
-				.map(|s| SelectType::Columns(s.clone_columns()))
+				.map(|s| {
+					SelectType::Columns(resolve_selection_columns(
+						s.columns(),
+						self.table,
+						self.joins.as_deref(),
+					))
+				})
 				.unwrap_or(SelectType::Star),
 			other => other,
 		}
@@ -268,7 +351,7 @@ pub struct ReadQueryBuilder<
 	pub(crate) pagination: Option<Pagination>,
 	pub(crate) include_deleted: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
-	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	pub(crate) selection: Option<SelectionList<Row>>,
 	row: PhantomData<Row>,
 }
 
@@ -328,7 +411,7 @@ where
 {
 	pub fn take<NewRow>(
 		self,
-		selection: SelectionList<C::Model, NewRow>,
+		selection: SelectionList<NewRow>,
 	) -> ReadQueryBuilder<'a, C, NewRow>
 	where
 		NewRow: Send

@@ -23,6 +23,7 @@ pub use head::{
 	AggregationType,
 	DeleteHead,
 	InsertHead,
+	QualifiedColumn,
 	ReadHead,
 	SelectType,
 	UpdateHead,

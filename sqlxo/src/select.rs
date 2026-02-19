@@ -12,27 +12,40 @@ pub trait Column: Copy {
 	type Model: QueryModel;
 	type Type;
 	const NAME: &'static str;
+	const TABLE: &'static str;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SelectionColumn {
+	pub table:  &'static str,
+	pub column: &'static str,
+}
+
+impl SelectionColumn {
+	pub const fn new(table: &'static str, column: &'static str) -> Self {
+		Self { table, column }
+	}
 }
 
 #[derive(Debug, Clone)]
-pub struct SelectionList<Model, Output> {
-	pub(crate) columns: SmallVec<[&'static str; 4]>,
-	_marker:            PhantomData<(Model, Output)>,
+pub struct SelectionList<Output> {
+	pub(crate) columns: SmallVec<[SelectionColumn; 4]>,
+	_marker:            PhantomData<Output>,
 }
 
-impl<Model, Output> SelectionList<Model, Output> {
-	pub fn new(columns: SmallVec<[&'static str; 4]>) -> Self {
+impl<Output> SelectionList<Output> {
+	pub fn new(columns: SmallVec<[SelectionColumn; 4]>) -> Self {
 		Self {
 			columns,
 			_marker: PhantomData,
 		}
 	}
 
-	pub fn columns(&self) -> &[&'static str] {
+	pub fn columns(&self) -> &[SelectionColumn] {
 		&self.columns
 	}
 
-	pub fn clone_columns(&self) -> SmallVec<[&'static str; 4]> {
+	pub fn clone_columns(&self) -> SmallVec<[SelectionColumn; 4]> {
 		self.columns.clone()
 	}
 
@@ -43,18 +56,24 @@ impl<Model, Output> SelectionList<Model, Output> {
 	) {
 		qb.push(" RETURNING ");
 		for (idx, col) in self.columns.iter().enumerate() {
+			assert_eq!(
+				col.table, table,
+				"`RETURNING` may only use columns from `{}` but got `{}`",
+				table, col.table,
+			);
+
 			if idx > 0 {
 				qb.push(", ");
 			}
-			qb.push(&format!(r#""{}"."{}""#, table, col));
+			qb.push(&format!(r#""{}"."{}""#, table, col.column));
 		}
 	}
 }
 
-pub fn push_returning<M, Output>(
+pub fn push_returning<Output>(
 	qb: &mut QueryBuilder<'static, Postgres>,
 	table: &str,
-	selection: Option<&SelectionList<M, Output>>,
+	selection: Option<&SelectionList<Output>>,
 ) {
 	if let Some(sel) = selection {
 		sel.push_returning(qb, table);
@@ -69,19 +88,22 @@ macro_rules! take {
 	($first:path $(, $rest:path)* $(,)?) => {{
 		use $crate::select::{
 			Column as __SqlxoColumn,
+			SelectionColumn as __SqlxoSelectionColumn,
 			SelectionList as __SqlxoSelectionList,
 		};
-		type __SqlxoModel = <$first as __SqlxoColumn>::Model;
-		$(let _: ::core::marker::PhantomData<__SqlxoModel> =
-			::core::marker::PhantomData::<<$rest as __SqlxoColumn>::Model>; )*
 
-		let mut __cols: smallvec::SmallVec<[&'static str; 4]> =
+		let mut __cols: smallvec::SmallVec<[__SqlxoSelectionColumn; 4]> =
 			smallvec::SmallVec::new();
-		__cols.push(<$first as __SqlxoColumn>::NAME);
-		$(__cols.push(<$rest as __SqlxoColumn>::NAME);)*
+		__cols.push(__SqlxoSelectionColumn::new(
+			<$first as __SqlxoColumn>::TABLE,
+			<$first as __SqlxoColumn>::NAME,
+		));
+		$(__cols.push(__SqlxoSelectionColumn::new(
+			<$rest as __SqlxoColumn>::TABLE,
+			<$rest as __SqlxoColumn>::NAME,
+		));)*
 
 		__SqlxoSelectionList::<
-			__SqlxoModel,
 			(
 				<$first as __SqlxoColumn>::Type,
 				$(<$rest as __SqlxoColumn>::Type,)*

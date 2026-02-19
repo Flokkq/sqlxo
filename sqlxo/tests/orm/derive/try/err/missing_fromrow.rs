@@ -1,3 +1,5 @@
+#![feature(inherent_associated_types)]
+
 use sqlxo_macros::Query;
 
 #[derive(Debug, Clone, Query)]

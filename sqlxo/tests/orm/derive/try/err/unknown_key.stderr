@@ -1,5 +1,14 @@
 error: unknown key in #[sqlxo]
- --> tests/orm/derive/try/err/unknown_key.rs:5:9
+ --> tests/orm/derive/try/err/unknown_key.rs:7:9
   |
-5 | #[sqlxo(foo = "bar")]
+7 | #[sqlxo(foo = "bar")]
   |         ^^^^^^^^^^^
+
+warning: the feature `inherent_associated_types` is incomplete and may not be safe to use and/or cause compiler crashes
+ --> tests/orm/derive/try/err/unknown_key.rs:1:12
+  |
+1 | #![feature(inherent_associated_types)]
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: see issue #8995 <https://github.com/rust-lang/rust/issues/8995> for more information
+  = note: `#[warn(incomplete_features)]` on by default

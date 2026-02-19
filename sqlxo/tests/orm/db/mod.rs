@@ -13,6 +13,7 @@ use sqlx::postgres::PgSslMode;
 use sqlx::PgPool;
 use sqlxo::and;
 use sqlxo::blocks::BuildableFilter;
+use sqlxo::blocks::BuildableJoin;
 use sqlxo::blocks::BuildablePage;
 use sqlxo::blocks::BuildableSort;
 use sqlxo::blocks::Expression;
@@ -23,13 +24,18 @@ use sqlxo::order_by;
 use sqlxo::Buildable;
 use sqlxo::ExecutablePlan;
 use sqlxo::FetchablePlan;
+use sqlxo::JoinKind;
 use sqlxo::QueryBuilder;
 use uuid::Uuid;
 
-use crate::helpers::Item;
-use crate::helpers::ItemColumn;
-use crate::helpers::ItemQuery;
-use crate::helpers::ItemSort;
+use crate::helpers::{
+	Item,
+	ItemColumn,
+	ItemJoin,
+	ItemQuery,
+	ItemSort,
+	Material,
+};
 
 #[derive(Debug, Clone)]
 pub struct DatabaseSettings {
@@ -858,6 +864,46 @@ async fn read_item_with_take_returns_tuple() {
 
 	assert_eq!(name, item.name);
 	assert!((price - item.price).abs() < f32::EPSILON);
+}
+
+#[tokio::test]
+async fn read_item_with_joined_take_returns_tuple() {
+	let pool = get_connection_pool().await;
+	let mut item = Item::default();
+	let material_id = Uuid::new_v4();
+
+	sqlx::query(
+		r#"
+            INSERT INTO material (id, name, long_name, description, supplier_id)
+            VALUES ($1, $2, $3, $4, $5)
+        "#,
+	)
+	.bind(material_id)
+	.bind("joined material")
+	.bind("joined material long name")
+	.bind("joined material desc")
+	.bind(Option::<Uuid>::None)
+	.execute(&pool)
+	.await
+	.unwrap();
+
+	item.material_id = Some(material_id);
+	insert_item(&item, &pool).await.unwrap();
+
+		let (item_id, joined_material_id): (Uuid, Uuid) =
+			QueryBuilder::<Item>::read()
+				.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Inner)
+				.take(sqlxo::take!(Item::ItemId, Material::MaterialId))
+				.r#where(Expression::Leaf(ItemQuery::MaterialIdEq(
+					Some(material_id),
+				)))
+				.build()
+				.fetch_one(&pool)
+				.await
+				.unwrap();
+
+	assert_eq!(item_id, item.id);
+	assert_eq!(joined_material_id, material_id);
 }
 
 #[tokio::test]

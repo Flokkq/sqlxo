@@ -9,12 +9,18 @@ use std::{
 };
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct QualifiedColumn {
+	pub table_alias: String,
+	pub column:      &'static str,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SelectType {
 	Star,
 	Aggregation(AggregationType),
 	StarAndCount,
 	Exists,
-	Columns(SmallVec<[&'static str; 4]>),
+	Columns(SmallVec<[QualifiedColumn; 4]>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -90,7 +96,7 @@ impl<'a> Display for ReadHead<'a> {
 						write!(f, ", ")?;
 					}
 					first = false;
-					write!(f, r#""{}"."{}""#, self.table, col)?;
+					write!(f, r#""{}"."{}""#, col.table_alias, col.column)?;
 				}
 				write!(f, " FROM {}", self.table)
 			} /* #[cfg(any(test, feature = "test-utils"))]

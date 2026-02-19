@@ -48,7 +48,7 @@ pub struct UpdateQueryPlan<
 	pub(crate) table: &'a str,
 	pub(crate) update_model: <C::Model as Updatable>::UpdateModel,
 	pub(crate) update_marker_field: Option<&'static str>,
-	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	pub(crate) selection: Option<SelectionList<Row>>,
 	row: PhantomData<Row>,
 }
 
@@ -166,7 +166,7 @@ pub struct UpdateQueryBuilder<
 	pub(crate) where_expr: Option<Expression<C::Query>>,
 	pub(crate) update_model: Option<<C::Model as Updatable>::UpdateModel>,
 	pub(crate) update_marker_field: Option<&'static str>,
-	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	pub(crate) selection: Option<SelectionList<Row>>,
 	row: PhantomData<Row>,
 }
 
@@ -228,7 +228,7 @@ where
 {
 	pub fn take<NewRow>(
 		self,
-		selection: SelectionList<C::Model, NewRow>,
+		selection: SelectionList<NewRow>,
 	) -> UpdateQueryBuilder<'a, C, NewRow>
 	where
 		NewRow: Send

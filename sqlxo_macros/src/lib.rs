@@ -361,6 +361,8 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		Ok(None) => input.ident.to_string().to_snake_case(),
 		Err(e) => return e.to_compile_error().into(),
 	};
+	let table_name_lit =
+		syn::LitStr::new(&table_name, proc_macro2::Span::call_site());
 
 	let struct_ident = &input.ident;
 	let query_ident = format_ident!("{}Query", struct_ident);
@@ -394,6 +396,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 	let mut write_arms = Vec::new();
 	let mut sort_sql_arms = Vec::new();
 	let mut column_structs = Vec::new();
+	let mut column_type_aliases = Vec::new();
 
 	let mut pk_field: Option<String> = None;
 	let mut fks: Vec<FkSpec> = Vec::new();
@@ -413,7 +416,14 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				type Model = #struct_ident;
 				type Type = #ty;
 				const NAME: &'static str = #field_name_snake;
+				const TABLE: &'static str = #table_name_lit;
 			}
+		});
+
+		let alias_ident =
+			format_ident!("{}{}", struct_ident, field_name_pascal);
+		column_type_aliases.push(quote! {
+			pub type #alias_ident = #column_mod_ident::#column_struct_ident;
 		});
 
 		for attr in &field.attrs {
@@ -873,6 +883,10 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		pub mod #column_mod_ident {
 			use super::*;
 			#(#column_structs)*
+		}
+
+		impl #struct_ident {
+			#(#column_type_aliases)*
 		}
 	};
 
