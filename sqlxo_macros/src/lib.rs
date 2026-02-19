@@ -276,26 +276,18 @@ fn build_join_codegen(
 	left_struct: &Ident,
 	left_table: &str,
 	fks: &[FkSpec],
-) -> (
-	Vec<proc_macro2::TokenStream>,
-	Vec<proc_macro2::TokenStream>,
-	Vec<proc_macro2::TokenStream>,
-) {
+) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
 	let root = sqlxo_root();
 	let mut variants = Vec::new();
-	let mut to_sql = Vec::new();
-	let mut kind_arms = Vec::new();
+	let mut descriptor_arms = Vec::new();
 
 	if fks.is_empty() {
 		let never = format_ident!("__Never");
 		variants.push(quote! { #never(::core::convert::Infallible) });
-		to_sql.push(
+		descriptor_arms.push(
 			quote! { Self::#never(_) => unreachable!("no joins for this model") },
 		);
-		kind_arms.push(
-			quote! { Self::#never(_) => unreachable!("no joins for this model") },
-		);
-		return (variants, to_sql, kind_arms);
+		return (variants, descriptor_arms);
 	}
 
 	for fk in fks {
@@ -307,25 +299,47 @@ fn build_join_codegen(
 			fk.fk_field_pascal
 		);
 
-		variants.push(quote! { #var(#root::JoinKind) });
+		variants.push(quote! { #var });
 
 		let right_table = fk.right_table.clone();
-		let on_left = format!(r#""{}"."{}""#, left_table, fk.fk_field_snake);
-		let on_right = format!(r#""{}"."{}""#, right_table, fk.right_pk);
+		let alias_segment = {
+			let mut base = fk.fk_field_snake.clone();
+			if let Some(stripped) = base.strip_suffix("_id") {
+				if !stripped.is_empty() {
+					base = stripped.to_string();
+				}
+			}
+			if base.is_empty() {
+				base = fk.fk_field_snake.clone();
+			}
+			format!("{}__", base)
+		};
 
-		to_sql.push(quote! {
-			Self::#var(kind) => match kind {
-				#root::JoinKind::Inner =>
-					format!(r#" INNER JOIN {} ON {} = {}"#, #right_table, #on_left, #on_right),
-				#root::JoinKind::Left  =>
-					format!(r#" LEFT JOIN {} ON {} = {}"#,  #right_table, #on_left, #on_right),
+		let alias_segment =
+			syn::LitStr::new(&alias_segment, proc_macro2::Span::call_site());
+		let left_table_lit =
+			syn::LitStr::new(left_table, proc_macro2::Span::call_site());
+		let left_field_lit = syn::LitStr::new(
+			&fk.fk_field_snake,
+			proc_macro2::Span::call_site(),
+		);
+		let right_table_lit =
+			syn::LitStr::new(&right_table, proc_macro2::Span::call_site());
+		let right_field_lit =
+			syn::LitStr::new(&fk.right_pk, proc_macro2::Span::call_site());
+
+		descriptor_arms.push(quote! {
+			Self::#var => #root::JoinDescriptor {
+				left_table:    #left_table_lit,
+				left_field:    #left_field_lit,
+				right_table:   #right_table_lit,
+				right_field:   #right_field_lit,
+				alias_segment: #alias_segment,
 			}
 		});
-
-		kind_arms.push(quote! { Self::#var(k) => *k });
 	}
 
-	(variants, to_sql, kind_arms)
+	(variants, descriptor_arms)
 }
 
 #[proc_macro_derive(Query, attributes(sqlxo, primary_key, foreign_key))]
@@ -769,7 +783,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		}
 	}
 
-	let (join_variants, join_to_sql_arms, join_kind_arms) =
+	let (join_variants, join_descriptor_arms) =
 		build_join_codegen(struct_ident, &table_name, &fks);
 
 	let out = quote! {
@@ -803,16 +817,24 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 
 		impl #root::SqlJoin for #join_ident {
-			fn to_sql(&self) -> String {
+			fn descriptor(&self) -> #root::JoinDescriptor {
 				match self {
-					#(#join_to_sql_arms),*
+					#(#join_descriptor_arms),*
 				}
 			}
+		}
 
-			fn kind(&self) -> #root::JoinKind {
-				match self {
-					#(#join_kind_arms),*
-				}
+		impl #join_ident {
+			pub fn path(self, kind: #root::JoinKind) -> #root::JoinPath {
+				#root::JoinPath::from_join(self, kind)
+			}
+
+			pub fn left(self) -> #root::JoinPath {
+				self.path(#root::JoinKind::Left)
+			}
+
+			pub fn inner(self) -> #root::JoinPath {
+				self.path(#root::JoinKind::Inner)
 			}
 		}
 

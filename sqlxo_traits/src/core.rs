@@ -46,10 +46,68 @@ pub enum JoinKind {
 	Inner,
 }
 
-pub trait SqlJoin {
-	fn to_sql(&self) -> String;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoinDescriptor {
+	pub left_table:    &'static str,
+	pub left_field:    &'static str,
+	pub right_table:   &'static str,
+	pub right_field:   &'static str,
+	pub alias_segment: &'static str,
+}
 
-	fn kind(&self) -> JoinKind;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoinSegment {
+	pub descriptor: JoinDescriptor,
+	pub kind:       JoinKind,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct JoinPath {
+	segments: Vec<JoinSegment>,
+}
+
+impl JoinPath {
+	pub fn from_join<J: SqlJoin>(join: J, kind: JoinKind) -> Self {
+		Self::new(join.descriptor(), kind)
+	}
+
+	pub fn new(descriptor: JoinDescriptor, kind: JoinKind) -> Self {
+		Self {
+			segments: vec![JoinSegment { descriptor, kind }],
+		}
+	}
+
+	pub fn then<J: SqlJoin>(mut self, join: J, kind: JoinKind) -> Self {
+		let descriptor = join.descriptor();
+
+		if let Some(prev) = self.segments.last() {
+			assert_eq!(
+				prev.descriptor.right_table, descriptor.left_table,
+				"Invalid join path: expected next hop to start at `{}` but \
+				 found `{}`",
+				prev.descriptor.right_table, descriptor.left_table,
+			);
+		}
+
+		self.segments.push(JoinSegment { descriptor, kind });
+		self
+	}
+
+	pub fn segments(&self) -> &[JoinSegment] {
+		&self.segments
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.segments.is_empty()
+	}
+
+	pub fn first_table(&self) -> Option<&'static str> {
+		self.segments.first().map(|seg| seg.descriptor.left_table)
+	}
+}
+
+pub trait SqlJoin {
+	fn descriptor(&self) -> JoinDescriptor;
 }
 
 pub trait Model {}

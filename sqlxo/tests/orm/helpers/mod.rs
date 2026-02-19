@@ -89,6 +89,16 @@ pub struct Material {
 	pub name:        String,
 	pub long_name:   String,
 	pub description: String,
+	#[foreign_key(to = "supplier.id")]
+	pub supplier_id: Option<Uuid>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query)]
+pub struct Supplier {
+	#[primary_key]
+	pub id:   Uuid,
+	pub name: String,
 }
 
 // Hard delete test model

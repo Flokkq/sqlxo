@@ -28,6 +28,7 @@ use crate::helpers::{
 	ItemJoin,
 	ItemQuery,
 	ItemSort,
+	MaterialJoin,
 	NormalizeString,
 	UpdateItem,
 	UpdateItemUpdate,
@@ -36,7 +37,7 @@ use crate::helpers::{
 #[test]
 fn query_builder() {
 	let plan: ReadQueryPlan<Item> = QueryBuilder::read()
-		.join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
+		.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Left)
 		.r#where(and![ItemQuery::NameLike("Clemens".into()), or![
 			ItemQuery::PriceGt(1800.00f32),
 			ItemQuery::DescriptionIsNull,
@@ -53,13 +54,37 @@ fn query_builder() {
 		r#"
             SELECT *
             FROM item
-            LEFT JOIN material ON "item"."material_id" = "material"."id"
+            LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
             WHERE (name LIKE $1 AND (price > $2 OR description IS NULL))
             ORDER BY name ASC, price DESC
             LIMIT $3 OFFSET $4
         "#
 		.normalize()
 	)
+}
+
+#[test]
+fn nested_join_path_builds_sql() {
+	let path = ItemJoin::ItemToMaterialByMaterialId
+		.path(JoinKind::Left)
+		.then(
+			MaterialJoin::MaterialToSupplierBySupplierId,
+			JoinKind::Inner,
+		);
+
+	let plan: ReadQueryPlan<Item> =
+		QueryBuilder::read().join_path(path).build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).trim_start().normalize(),
+		r#"
+            SELECT *
+            FROM item
+            LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
+            INNER JOIN supplier AS "material__supplier__" ON "material__"."supplier_id" = "material__supplier__"."id"
+        "#
+		.normalize()
+	);
 }
 
 #[test]

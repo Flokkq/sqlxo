@@ -4,8 +4,9 @@ use sqlx::{
 };
 use sqlxo_traits::{
 	Filterable,
+	JoinKind,
+	JoinPath,
 	Sortable,
-	SqlJoin,
 };
 use sqlxo_traits::{
 	QueryContext,
@@ -43,7 +44,9 @@ pub trait BuildableFilter<C: QueryContext> {
 }
 
 pub trait BuildableJoin<C: QueryContext> {
-	fn join(self, j: C::Join) -> Self;
+	fn join(self, join: C::Join, kind: JoinKind) -> Self;
+
+	fn join_path(self, path: JoinPath) -> Self;
 }
 
 pub trait BuildableSort<C: QueryContext> {
@@ -88,13 +91,46 @@ impl SqlWriter {
 		&mut self.qb
 	}
 
-	pub fn push_joins<J: SqlJoin>(&mut self, joins: &Vec<J>) {
-		if self.has_join {
+	pub fn push_joins(&mut self, joins: &[JoinPath], base_table: &str) {
+		if self.has_join || joins.is_empty() {
 			return;
 		}
 
-		for j in joins {
-			self.qb.push(j.to_sql());
+		for path in joins {
+			self.push_join_path(path, base_table);
+		}
+
+		self.has_join = true;
+	}
+
+	fn push_join_path(&mut self, path: &JoinPath, base_table: &str) {
+		if path.is_empty() {
+			return;
+		}
+
+		let mut left_alias = base_table.to_string();
+		let mut alias_prefix = String::new();
+
+		for segment in path.segments() {
+			alias_prefix.push_str(segment.descriptor.alias_segment);
+			let right_alias = alias_prefix.clone();
+			let join_word = match segment.kind {
+				JoinKind::Inner => " INNER JOIN ",
+				JoinKind::Left => " LEFT JOIN ",
+			};
+
+			let clause = format!(
+				r#"{join}{table} AS "{alias}" ON "{left}"."{left_field}" = "{alias}"."{right_field}""#,
+				join = join_word,
+				table = segment.descriptor.right_table,
+				alias = &right_alias,
+				left = &left_alias,
+				left_field = segment.descriptor.left_field,
+				right_field = segment.descriptor.right_field,
+			);
+
+			self.qb.push(clause);
+			left_alias = right_alias;
 		}
 	}
 

@@ -6,6 +6,8 @@ use sqlx::{
 };
 use sqlxo_traits::{
 	GetDeleteMarker,
+	JoinKind,
+	JoinPath,
 	QueryContext,
 	SqlWrite,
 };
@@ -49,7 +51,7 @@ where
 
 pub struct ReadQueryPlan<'a, C: QueryContext, Row = <C as QueryContext>::Model>
 {
-	pub(crate) joins: Option<Vec<C::Join>>,
+	pub(crate) joins: Option<Vec<JoinPath>>,
 	pub(crate) where_expr: Option<Expression<C::Query>>,
 	pub(crate) sort_expr: Option<SortOrder<C::Sort>>,
 	pub(crate) pagination: Option<Pagination>,
@@ -75,7 +77,7 @@ where
 		let mut w = SqlWriter::new(head);
 
 		if let Some(js) = &self.joins {
-			w.push_joins(js);
+			w.push_joins(js, self.table);
 		}
 
 		self.push_where_clause(&mut w);
@@ -260,7 +262,7 @@ pub struct ReadQueryBuilder<
 	Row = <C as QueryContext>::Model,
 > {
 	pub(crate) table: &'a str,
-	pub(crate) joins: Option<Vec<C::Join>>,
+	pub(crate) joins: Option<Vec<JoinPath>>,
 	pub(crate) where_expr: Option<Expression<C::Query>>,
 	pub(crate) sort_expr: Option<SortOrder<C::Sort>>,
 	pub(crate) pagination: Option<Pagination>,
@@ -368,10 +370,22 @@ where
 	C: QueryContext,
 	C::Model: crate::GetDeleteMarker,
 {
-	fn join(mut self, j: <C as QueryContext>::Join) -> Self {
+	fn join(self, join: <C as QueryContext>::Join, kind: JoinKind) -> Self {
+		self.join_path(JoinPath::from_join(join, kind))
+	}
+
+	fn join_path(mut self, path: JoinPath) -> Self {
+		if let Some(expected) = path.first_table() {
+			assert_eq!(
+				expected, self.table,
+				"join path must start at base table `{}` but started at `{}`",
+				self.table, expected,
+			);
+		}
+
 		match &mut self.joins {
-			Some(existing) => existing.push(j),
-			None => self.joins = Some(vec![j]),
+			Some(existing) => existing.push(path),
+			None => self.joins = Some(vec![path]),
 		};
 
 		self

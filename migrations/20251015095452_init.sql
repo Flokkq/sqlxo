@@ -1,8 +1,14 @@
+CREATE TABLE supplier (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
 CREATE TABLE material (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     long_name TEXT NOT NULL,
-    description TEXT
+    description TEXT,
+    supplier_id UUID REFERENCES supplier(id)
 );
 
 CREATE TABLE item (

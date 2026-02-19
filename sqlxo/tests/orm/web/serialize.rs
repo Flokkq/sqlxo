@@ -73,7 +73,7 @@ fn query_builder_from_dto_filter() {
 
 	let plan: ReadQueryPlan<Item> =
 		QueryBuilder::<Item>::from_dto::<ItemDto>(&f)
-			.join(ItemJoin::ItemToMaterialByMaterialId(JoinKind::Left))
+			.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Left)
 			.build();
 
 	assert_eq!(
@@ -81,7 +81,7 @@ fn query_builder_from_dto_filter() {
 		r#"
         SELECT *
         FROM item
-        LEFT JOIN material ON "item"."material_id" = "material"."id"
+        LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
         WHERE (name LIKE $1 AND (price > $2 OR description <> $3))
         ORDER BY name ASC, description DESC
         LIMIT $4 OFFSET $5

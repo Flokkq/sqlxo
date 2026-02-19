@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use crate::helpers::NormalizeString;
 use chrono::{
 	DateTime,
 	Utc,
@@ -13,7 +14,6 @@ use sqlxo::{
 	SoftDelete,
 };
 use uuid::Uuid;
-use crate::helpers::NormalizeString;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, FromRow, Query, Delete)]
@@ -98,7 +98,10 @@ fn test_soft_delete_sql_generation() {
 		.build();
 
 	let sql = plan.sql().normalize();
-	assert_eq!(sql, "UPDATE soft_item SET deleted_at = NOW() WHERE name = $1");
+	assert_eq!(
+		sql,
+		"UPDATE soft_item SET deleted_at = NOW() WHERE name = $1"
+	);
 }
 
 #[cfg(any(test, feature = "test-utils"))]
