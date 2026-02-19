@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use sqlx::{
 	Executor,
 	Postgres,
@@ -12,6 +14,10 @@ use crate::{
 		Expression,
 		SqlWriter,
 	},
+	select::{
+		self,
+		SelectionList,
+	},
 	Buildable,
 	ExecutablePlan,
 	FetchablePlan,
@@ -20,21 +26,28 @@ use crate::{
 
 /// TODO: this will be useful once multiple sql dialects will be supported
 #[allow(dead_code)]
-pub trait BuildableDeleteQuery<C>:
-	Buildable<C, Plan: Planable<C>> + BuildableFilter<C>
+pub trait BuildableDeleteQuery<C, Row = <C as QueryContext>::Model>:
+	Buildable<C, Row = Row, Plan: Planable<C, Row>> + BuildableFilter<C>
 where
 	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
 
-pub struct DeleteQueryPlan<'a, C: QueryContext> {
-	pub(crate) where_expr:          Option<Expression<C::Query>>,
-	pub(crate) table:               &'a str,
-	pub(crate) is_soft:             bool,
+pub struct DeleteQueryPlan<
+	'a,
+	C: QueryContext,
+	Row = <C as QueryContext>::Model,
+> {
+	pub(crate) where_expr: Option<Expression<C::Query>>,
+	pub(crate) table: &'a str,
+	pub(crate) is_soft: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
 }
 
-impl<'a, C> DeleteQueryPlan<'a, C>
+impl<'a, C, Row> DeleteQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 {
@@ -50,6 +63,10 @@ where
 		w.into_builder()
 	}
 
+	fn push_returning(&self, qb: &mut sqlx::QueryBuilder<'static, Postgres>) {
+		select::push_returning(qb, self.table, self.selection.as_ref());
+	}
+
 	#[cfg(any(test, feature = "test-utils"))]
 	pub fn sql(&self) -> String {
 		use sqlx::Execute;
@@ -58,10 +75,11 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, C> ExecutablePlan<C> for DeleteQueryPlan<'a, C>
+impl<'a, C, Row> ExecutablePlan<C> for DeleteQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::Deletable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 	async fn execute<'e, E>(&self, exec: E) -> Result<u64, sqlx::Error>
 	where
@@ -79,66 +97,65 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, C> FetchablePlan<C> for DeleteQueryPlan<'a, C>
+impl<'a, C, Row> FetchablePlan<C, Row> for DeleteQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::Deletable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	async fn fetch_one<'e, E>(&self, exec: E) -> Result<C::Model, sqlx::Error>
+	async fn fetch_one<'e, E>(&self, exec: E) -> Result<Row, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder()
-			.push(" RETURNING *")
-			.build_query_as::<C::Model>()
-			.fetch_one(exec)
-			.await
+		let mut qb = self.to_query_builder();
+		self.push_returning(&mut qb);
+		qb.build_query_as::<Row>().fetch_one(exec).await
 	}
 
-	async fn fetch_all<'e, E>(
-		&self,
-		exec: E,
-	) -> Result<Vec<C::Model>, sqlx::Error>
+	async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder()
-			.push(" RETURNING *")
-			.build_query_as::<C::Model>()
-			.fetch_all(exec)
-			.await
+		let mut qb = self.to_query_builder();
+		self.push_returning(&mut qb);
+		qb.build_query_as::<Row>().fetch_all(exec).await
 	}
 
 	async fn fetch_optional<'e, E>(
 		&self,
 		exec: E,
-	) -> Result<Option<C::Model>, sqlx::Error>
+	) -> Result<Option<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder()
-			.push(" RETURNING *")
-			.build_query_as::<C::Model>()
-			.fetch_optional(exec)
-			.await
+		let mut qb = self.to_query_builder();
+		self.push_returning(&mut qb);
+		qb.build_query_as::<Row>().fetch_optional(exec).await
 	}
 }
 
-impl<'a, C> Planable<C> for DeleteQueryPlan<'a, C>
+impl<'a, C, Row> Planable<C, Row> for DeleteQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::Deletable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
 
-pub struct DeleteQueryBuilder<'a, C: QueryContext> {
-	pub(crate) table:               &'a str,
-	pub(crate) where_expr:          Option<Expression<C::Query>>,
-	pub(crate) is_soft:             bool,
+pub struct DeleteQueryBuilder<
+	'a,
+	C: QueryContext,
+	Row = <C as QueryContext>::Model,
+> {
+	pub(crate) table: &'a str,
+	pub(crate) where_expr: Option<Expression<C::Query>>,
+	pub(crate) is_soft: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
 }
 
-impl<'a, C> DeleteQueryBuilder<'a, C>
+impl<'a, C, Row> DeleteQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 {
@@ -148,6 +165,8 @@ where
 			where_expr: None,
 			is_soft: true,
 			delete_marker_field: Some(delete_marker_field),
+			selection: None,
+			row: PhantomData,
 		}
 	}
 
@@ -157,16 +176,20 @@ where
 			where_expr: None,
 			is_soft: false,
 			delete_marker_field: None,
+			selection: None,
+			row: PhantomData,
 		}
 	}
 }
 
-impl<'a, C> Buildable<C> for DeleteQueryBuilder<'a, C>
+impl<'a, C, Row> Buildable<C> for DeleteQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::Deletable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	type Plan = DeleteQueryPlan<'a, C>;
+	type Row = Row;
+	type Plan = DeleteQueryPlan<'a, C, Row>;
 
 	fn from_ctx() -> Self {
 		Self {
@@ -175,6 +198,8 @@ where
 			is_soft:             <C::Model as crate::Deletable>::IS_SOFT_DELETE,
 			delete_marker_field:
 				<C::Model as crate::Deletable>::DELETE_MARKER_FIELD,
+			selection:           None,
+			row:                 PhantomData,
 		}
 	}
 
@@ -184,11 +209,40 @@ where
 			table:               self.table,
 			is_soft:             self.is_soft,
 			delete_marker_field: self.delete_marker_field,
+			selection:           self.selection,
+			row:                 PhantomData,
 		}
 	}
 }
 
-impl<'a, C> BuildableFilter<C> for DeleteQueryBuilder<'a, C>
+impl<'a, C, Row> DeleteQueryBuilder<'a, C, Row>
+where
+	C: QueryContext,
+	C::Model: crate::Deletable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+{
+	pub fn take<NewRow>(
+		self,
+		selection: SelectionList<C::Model, NewRow>,
+	) -> DeleteQueryBuilder<'a, C, NewRow>
+	where
+		NewRow: Send
+			+ Sync
+			+ Unpin
+			+ for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+	{
+		DeleteQueryBuilder {
+			table:               self.table,
+			where_expr:          self.where_expr,
+			is_soft:             self.is_soft,
+			delete_marker_field: self.delete_marker_field,
+			selection:           Some(selection),
+			row:                 PhantomData,
+		}
+	}
+}
+
+impl<'a, C, Row> BuildableFilter<C> for DeleteQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::Deletable,
@@ -203,9 +257,10 @@ where
 	}
 }
 
-impl<'a, C> BuildableDeleteQuery<C> for DeleteQueryBuilder<'a, C>
+impl<'a, C, Row> BuildableDeleteQuery<C, Row> for DeleteQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::Deletable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }

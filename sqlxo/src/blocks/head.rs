@@ -1,4 +1,5 @@
 use core::fmt;
+use smallvec::SmallVec;
 use std::{
 	borrow::Cow,
 	fmt::{
@@ -13,6 +14,7 @@ pub enum SelectType {
 	Aggregation(AggregationType),
 	StarAndCount,
 	Exists,
+	Columns(SmallVec<[&'static str; 4]>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -79,6 +81,18 @@ impl<'a> Display for ReadHead<'a> {
 			}
 			SelectType::Exists => {
 				write!(f, "SELECT EXISTS(SELECT 1 FROM {}", self.table)
+			}
+			SelectType::Columns(cols) => {
+				let mut first = true;
+				write!(f, "SELECT ")?;
+				for col in cols {
+					if !first {
+						write!(f, ", ")?;
+					}
+					first = false;
+					write!(f, r#""{}"."{}""#, self.table, col)?;
+				}
+				write!(f, " FROM {}", self.table)
 			} /* #[cfg(any(test, feature = "test-utils"))]
 			   * BuildType::Raw => write!(f, ""), */
 		}

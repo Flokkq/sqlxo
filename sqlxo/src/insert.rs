@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use sqlx::{
 	Executor,
 	Postgres,
@@ -13,6 +15,10 @@ use crate::{
 		InsertHead,
 		SqlWriter,
 	},
+	select::{
+		self,
+		SelectionList,
+	},
 	Buildable,
 	ExecutablePlan,
 	FetchablePlan,
@@ -20,22 +26,29 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub trait BuildableInsertQuery<C>: Buildable<C, Plan: Planable<C>>
+pub trait BuildableInsertQuery<C, Row = <C as QueryContext>::Model>:
+	Buildable<C, Row = Row, Plan: Planable<C, Row>>
 where
 	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
 
-pub struct InsertQueryPlan<'a, C: QueryContext>
-where
+pub struct InsertQueryPlan<
+	'a,
+	C: QueryContext,
+	Row = <C as QueryContext>::Model,
+> where
 	C::Model: Creatable,
 {
-	pub(crate) table:               &'a str,
-	pub(crate) create_model:        <C::Model as Creatable>::CreateModel,
+	pub(crate) table: &'a str,
+	pub(crate) create_model: <C::Model as Creatable>::CreateModel,
 	pub(crate) insert_marker_field: Option<&'static str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
 }
 
-impl<'a, C> InsertQueryPlan<'a, C>
+impl<'a, C, Row> InsertQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Creatable,
@@ -50,6 +63,10 @@ where
 		w.into_builder()
 	}
 
+	fn push_returning(&self, qb: &mut sqlx::QueryBuilder<'static, Postgres>) {
+		select::push_returning(qb, self.table, self.selection.as_ref());
+	}
+
 	#[cfg(any(test, feature = "test-utils"))]
 	pub fn sql(&self) -> String {
 		use sqlx::Execute;
@@ -58,10 +75,11 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, C> ExecutablePlan<C> for InsertQueryPlan<'a, C>
+impl<'a, C, Row> ExecutablePlan<C> for InsertQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Creatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 	async fn execute<'e, E>(&self, exec: E) -> Result<u64, sqlx::Error>
 	where
@@ -79,68 +97,66 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, C> FetchablePlan<C> for InsertQueryPlan<'a, C>
+impl<'a, C, Row> FetchablePlan<C, Row> for InsertQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Creatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	async fn fetch_one<'e, E>(&self, exec: E) -> Result<C::Model, sqlx::Error>
+	async fn fetch_one<'e, E>(&self, exec: E) -> Result<Row, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder()
-			.push(" RETURNING *")
-			.build_query_as::<C::Model>()
-			.fetch_one(exec)
-			.await
+		let mut qb = self.to_query_builder();
+		self.push_returning(&mut qb);
+		qb.build_query_as::<Row>().fetch_one(exec).await
 	}
 
-	async fn fetch_all<'e, E>(
-		&self,
-		exec: E,
-	) -> Result<Vec<C::Model>, sqlx::Error>
+	async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder()
-			.push(" RETURNING *")
-			.build_query_as::<C::Model>()
-			.fetch_all(exec)
-			.await
+		let mut qb = self.to_query_builder();
+		self.push_returning(&mut qb);
+		qb.build_query_as::<Row>().fetch_all(exec).await
 	}
 
 	async fn fetch_optional<'e, E>(
 		&self,
 		exec: E,
-	) -> Result<Option<C::Model>, sqlx::Error>
+	) -> Result<Option<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder()
-			.push(" RETURNING *")
-			.build_query_as::<C::Model>()
-			.fetch_optional(exec)
-			.await
+		let mut qb = self.to_query_builder();
+		self.push_returning(&mut qb);
+		qb.build_query_as::<Row>().fetch_optional(exec).await
 	}
 }
 
-impl<'a, C> Planable<C> for InsertQueryPlan<'a, C>
+impl<'a, C, Row> Planable<C, Row> for InsertQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Creatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
 
-pub struct InsertQueryBuilder<'a, C: QueryContext>
-where
+pub struct InsertQueryBuilder<
+	'a,
+	C: QueryContext,
+	Row = <C as QueryContext>::Model,
+> where
 	C::Model: Creatable,
 {
-	pub(crate) table:               &'a str,
+	pub(crate) table: &'a str,
 	pub(crate) create_model: Option<<C::Model as Creatable>::CreateModel>,
 	pub(crate) insert_marker_field: Option<&'static str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
 }
 
-impl<'a, C> InsertQueryBuilder<'a, C>
+impl<'a, C, Row> InsertQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Creatable,
@@ -154,18 +170,22 @@ where
 	}
 }
 
-impl<'a, C> Buildable<C> for InsertQueryBuilder<'a, C>
+impl<'a, C, Row> Buildable<C> for InsertQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Creatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	type Plan = InsertQueryPlan<'a, C>;
+	type Row = Row;
+	type Plan = InsertQueryPlan<'a, C, Row>;
 
 	fn from_ctx() -> Self {
 		Self {
 			table:               C::TABLE,
 			create_model:        None,
 			insert_marker_field: <C::Model as Creatable>::INSERT_MARKER_FIELD,
+			selection:           None,
+			row:                 PhantomData,
 		}
 	}
 
@@ -178,13 +198,42 @@ where
 			table: self.table,
 			create_model,
 			insert_marker_field: self.insert_marker_field,
+			selection: self.selection,
+			row: PhantomData,
 		}
 	}
 }
 
-impl<'a, C> BuildableInsertQuery<C> for InsertQueryBuilder<'a, C>
+impl<'a, C, Row> InsertQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Creatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+{
+	pub fn take<NewRow>(
+		self,
+		selection: SelectionList<C::Model, NewRow>,
+	) -> InsertQueryBuilder<'a, C, NewRow>
+	where
+		NewRow: Send
+			+ Sync
+			+ Unpin
+			+ for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+	{
+		InsertQueryBuilder {
+			table:               self.table,
+			create_model:        self.create_model,
+			insert_marker_field: self.insert_marker_field,
+			selection:           Some(selection),
+			row:                 PhantomData,
+		}
+	}
+}
+
+impl<'a, C, Row> BuildableInsertQuery<C, Row> for InsertQueryBuilder<'a, C, Row>
+where
+	C: QueryContext,
+	C::Model: Creatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }

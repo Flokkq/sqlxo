@@ -352,6 +352,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 	let query_ident = format_ident!("{}Query", struct_ident);
 	let sort_ident = format_ident!("{}Sort", struct_ident);
 	let join_ident = format_ident!("{}Join", struct_ident);
+	let column_mod_ident = format_ident!("{}Column", struct_ident);
 
 	let data = match &input.data {
 		Data::Struct(s) => s,
@@ -378,6 +379,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 	let mut sort_variants = Vec::new();
 	let mut write_arms = Vec::new();
 	let mut sort_sql_arms = Vec::new();
+	let mut column_structs = Vec::new();
 
 	let mut pk_field: Option<String> = None;
 	let mut fks: Vec<FkSpec> = Vec::new();
@@ -387,6 +389,18 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		let field_name_pascal = field_ident.to_string().to_pascal_case();
 		let field_name_snake = field_ident.to_string().to_snake_case();
 		let ty = &field.ty;
+		let column_struct_ident = format_ident!("{}", field_name_pascal);
+
+		column_structs.push(quote! {
+			#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+			pub struct #column_struct_ident;
+
+			impl #root::select::Column for #column_struct_ident {
+				type Model = #struct_ident;
+				type Type = #ty;
+				const NAME: &'static str = #field_name_snake;
+			}
+		});
 
 		for attr in &field.attrs {
 			if attr.path.is_ident("primary_key") {
@@ -831,6 +845,12 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			fn into_iter(self) -> Self::IntoIter {
 				::std::iter::once(self)
 			}
+		}
+
+		#[allow(non_snake_case)]
+		pub mod #column_mod_ident {
+			use super::*;
+			#(#column_structs)*
 		}
 	};
 

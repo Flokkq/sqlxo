@@ -11,17 +11,27 @@ use sqlxo::{
 	or,
 	order_by,
 	Buildable,
+	DeleteQueryPlan,
+	InsertQueryPlan,
 	JoinKind,
 	QueryBuilder,
 	ReadQueryPlan,
+	SelectionList,
+	UpdateQueryPlan,
 };
+use uuid::Uuid;
 
 use crate::helpers::{
+	CreateItem,
+	CreateItemCreation,
+	HardDeleteItem,
 	Item,
 	ItemJoin,
 	ItemQuery,
 	ItemSort,
 	NormalizeString,
+	UpdateItem,
+	UpdateItemUpdate,
 };
 
 #[test]
@@ -51,4 +61,62 @@ fn query_builder() {
         "#
 		.normalize()
 	)
+}
+
+#[test]
+fn read_builder_allows_custom_row_type() {
+	let plan: ReadQueryPlan<Item, (Uuid,)> = QueryBuilder::<Item>::read()
+		.take(sqlxo::take!(crate::helpers::ItemColumn::Id))
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).normalize(),
+		r#"SELECT "item"."id" FROM item"#.normalize()
+	);
+}
+
+#[test]
+fn delete_builder_allows_custom_row_type() {
+	let plan: DeleteQueryPlan<HardDeleteItem, (Uuid,)> =
+		QueryBuilder::<HardDeleteItem>::delete()
+			.take(sqlxo::take!(crate::helpers::HardDeleteItemColumn::Id))
+			.build();
+
+	assert_eq!(plan.sql().normalize(), "DELETE FROM hard_delete_item");
+}
+
+#[test]
+fn insert_builder_allows_custom_row_type() {
+	let create = CreateItemCreation {
+		id:          Uuid::new_v4(),
+		name:        "builder insert".into(),
+		description: "row subset".into(),
+		price:       10.0,
+	};
+	let plan: InsertQueryPlan<CreateItem, (Uuid,)> =
+		QueryBuilder::<CreateItem>::insert()
+			.model(create)
+			.take(sqlxo::take!(crate::helpers::CreateItemColumn::Id))
+			.build();
+
+	assert!(plan.sql().contains("INSERT INTO create_item"));
+}
+
+#[test]
+fn update_builder_allows_custom_row_type() {
+	let update = UpdateItemUpdate {
+		name:        Some("builder update".into()),
+		description: None,
+		price:       None,
+	};
+	let plan: UpdateQueryPlan<UpdateItem, (Uuid, String)> =
+		QueryBuilder::<UpdateItem>::update()
+			.model(update)
+			.take(sqlxo::take!(
+				crate::helpers::UpdateItemColumn::Id,
+				crate::helpers::UpdateItemColumn::Name
+			))
+			.build();
+
+	assert!(plan.sql().contains("UPDATE update_item SET"));
 }

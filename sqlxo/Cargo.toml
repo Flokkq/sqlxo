@@ -28,6 +28,7 @@ tokio = { workspace = true }
 utoipa = { workspace = true }
 thiserror = "2.0.17"
 async-trait = "0.1.89"
+smallvec = "1.13"
 
 [dev-dependencies]
 claims = "0.8.0"

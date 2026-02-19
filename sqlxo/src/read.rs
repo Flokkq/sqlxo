@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use sqlx::{
 	Executor,
 	Postgres,
@@ -24,6 +26,7 @@ use crate::{
 		SqlWriter,
 	},
 	order_by,
+	select::SelectionList,
 	Buildable,
 	ExecutablePlan,
 	FetchablePlan,
@@ -32,28 +35,32 @@ use crate::{
 
 /// TODO: this will be useful once multiple sql dialects will be supported
 #[allow(dead_code)]
-pub trait BuildableReadQuery<C>:
-	Buildable<C, Plan: Planable<C>>
+pub trait BuildableReadQuery<C, Row = <C as QueryContext>::Model>:
+	Buildable<C, Row = Row, Plan: Planable<C, Row>>
 	+ BuildableFilter<C>
 	+ BuildableJoin<C>
 	+ BuildableSort<C>
 	+ BuildablePage<C>
 where
 	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
 
-pub struct ReadQueryPlan<'a, C: QueryContext> {
-	pub(crate) joins:               Option<Vec<C::Join>>,
-	pub(crate) where_expr:          Option<Expression<C::Query>>,
-	pub(crate) sort_expr:           Option<SortOrder<C::Sort>>,
-	pub(crate) pagination:          Option<Pagination>,
-	pub(crate) table:               &'a str,
-	pub(crate) include_deleted:     bool,
+pub struct ReadQueryPlan<'a, C: QueryContext, Row = <C as QueryContext>::Model>
+{
+	pub(crate) joins: Option<Vec<C::Join>>,
+	pub(crate) where_expr: Option<Expression<C::Query>>,
+	pub(crate) sort_expr: Option<SortOrder<C::Sort>>,
+	pub(crate) pagination: Option<Pagination>,
+	pub(crate) table: &'a str,
+	pub(crate) include_deleted: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
 }
 
-impl<'a, C> ReadQueryPlan<'a, C>
+impl<'a, C, Row> ReadQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 {
@@ -61,7 +68,10 @@ where
 		&self,
 		select_type: SelectType,
 	) -> sqlx::QueryBuilder<'static, Postgres> {
-		let head = ReadHead::new(self.table, select_type.clone());
+		let head = ReadHead::new(
+			self.table,
+			self.select_type_for(select_type.clone()),
+		);
 		let mut w = SqlWriter::new(head);
 
 		if let Some(js) = &self.joins {
@@ -88,6 +98,17 @@ where
 		}
 
 		w.into_builder()
+	}
+
+	fn select_type_for(&self, base: SelectType) -> SelectType {
+		match base {
+			SelectType::Star => self
+				.selection
+				.as_ref()
+				.map(|s| SelectType::Columns(s.clone_columns()))
+				.unwrap_or(SelectType::Star),
+			other => other,
+		}
 	}
 
 	fn push_where_clause(&self, w: &mut SqlWriter) {
@@ -166,29 +187,27 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, C> FetchablePlan<C> for ReadQueryPlan<'a, C>
+impl<'a, C, Row> FetchablePlan<C, Row> for ReadQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	async fn fetch_one<'e, E>(&self, exec: E) -> Result<C::Model, sqlx::Error>
+	async fn fetch_one<'e, E>(&self, exec: E) -> Result<Row, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
 		self.to_query_builder(SelectType::Star)
-			.build_query_as::<C::Model>()
+			.build_query_as::<Row>()
 			.fetch_one(exec)
 			.await
 	}
 
-	async fn fetch_all<'e, E>(
-		&self,
-		exec: E,
-	) -> Result<Vec<C::Model>, sqlx::Error>
+	async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
 		self.to_query_builder(SelectType::Star)
-			.build_query_as::<C::Model>()
+			.build_query_as::<Row>()
 			.fetch_all(exec)
 			.await
 	}
@@ -196,21 +215,22 @@ where
 	async fn fetch_optional<'e, E>(
 		&self,
 		exec: E,
-	) -> Result<Option<C::Model>, sqlx::Error>
+	) -> Result<Option<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
 		self.to_query_builder(SelectType::Star)
-			.build_query_as::<C::Model>()
+			.build_query_as::<Row>()
 			.fetch_optional(exec)
 			.await
 	}
 }
 
 #[async_trait::async_trait]
-impl<'a, C> ExecutablePlan<C> for ReadQueryPlan<'a, C>
+impl<'a, C, Row> ExecutablePlan<C> for ReadQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 	async fn execute<'e, E>(&self, exec: E) -> Result<u64, sqlx::Error>
 	where
@@ -227,19 +247,30 @@ where
 	}
 }
 
-impl<'a, C> Planable<C> for ReadQueryPlan<'a, C> where C: QueryContext {}
-
-pub struct ReadQueryBuilder<'a, C: QueryContext> {
-	pub(crate) table:               &'a str,
-	pub(crate) joins:               Option<Vec<C::Join>>,
-	pub(crate) where_expr:          Option<Expression<C::Query>>,
-	pub(crate) sort_expr:           Option<SortOrder<C::Sort>>,
-	pub(crate) pagination:          Option<Pagination>,
-	pub(crate) include_deleted:     bool,
-	pub(crate) delete_marker_field: Option<&'a str>,
+impl<'a, C, Row> Planable<C, Row> for ReadQueryPlan<'a, C, Row>
+where
+	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+{
 }
 
-impl<'a, C> ReadQueryBuilder<'a, C>
+pub struct ReadQueryBuilder<
+	'a,
+	C: QueryContext,
+	Row = <C as QueryContext>::Model,
+> {
+	pub(crate) table: &'a str,
+	pub(crate) joins: Option<Vec<C::Join>>,
+	pub(crate) where_expr: Option<Expression<C::Query>>,
+	pub(crate) sort_expr: Option<SortOrder<C::Sort>>,
+	pub(crate) pagination: Option<Pagination>,
+	pub(crate) include_deleted: bool,
+	pub(crate) delete_marker_field: Option<&'a str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
+}
+
+impl<'a, C, Row> ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 {
@@ -249,12 +280,14 @@ where
 	}
 }
 
-impl<'a, C> Buildable<C> for ReadQueryBuilder<'a, C>
+impl<'a, C, Row> Buildable<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::GetDeleteMarker,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	type Plan = ReadQueryPlan<'a, C>;
+	type Row = Row;
+	type Plan = ReadQueryPlan<'a, C, Row>;
 
 	fn from_ctx() -> Self {
 		Self {
@@ -265,6 +298,8 @@ where
 			pagination:          None,
 			include_deleted:     false,
 			delete_marker_field: C::Model::delete_marker_field(),
+			selection:           None,
+			row:                 PhantomData,
 		}
 	}
 
@@ -277,11 +312,43 @@ where
 			table:               self.table,
 			include_deleted:     self.include_deleted,
 			delete_marker_field: self.delete_marker_field,
+			selection:           self.selection,
+			row:                 PhantomData,
 		}
 	}
 }
 
-impl<'a, C> BuildableFilter<C> for ReadQueryBuilder<'a, C>
+impl<'a, C, Row> ReadQueryBuilder<'a, C, Row>
+where
+	C: QueryContext,
+	C::Model: crate::GetDeleteMarker,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+{
+	pub fn take<NewRow>(
+		self,
+		selection: SelectionList<C::Model, NewRow>,
+	) -> ReadQueryBuilder<'a, C, NewRow>
+	where
+		NewRow: Send
+			+ Sync
+			+ Unpin
+			+ for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+	{
+		ReadQueryBuilder {
+			table:               self.table,
+			joins:               self.joins,
+			where_expr:          self.where_expr,
+			sort_expr:           self.sort_expr,
+			pagination:          self.pagination,
+			include_deleted:     self.include_deleted,
+			delete_marker_field: self.delete_marker_field,
+			selection:           Some(selection),
+			row:                 PhantomData,
+		}
+	}
+}
+
+impl<'a, C, Row> BuildableFilter<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::GetDeleteMarker,
@@ -296,7 +363,7 @@ where
 	}
 }
 
-impl<'a, C> BuildableJoin<C> for ReadQueryBuilder<'a, C>
+impl<'a, C, Row> BuildableJoin<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::GetDeleteMarker,
@@ -311,7 +378,7 @@ where
 	}
 }
 
-impl<'a, C> BuildableSort<C> for ReadQueryBuilder<'a, C>
+impl<'a, C, Row> BuildableSort<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::GetDeleteMarker,
@@ -326,7 +393,7 @@ where
 	}
 }
 
-impl<'a, C> BuildablePage<C> for ReadQueryBuilder<'a, C>
+impl<'a, C, Row> BuildablePage<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::GetDeleteMarker,
@@ -337,9 +404,10 @@ where
 	}
 }
 
-impl<'a, C> BuildableReadQuery<C> for ReadQueryBuilder<'a, C>
+impl<'a, C, Row> BuildableReadQuery<C, Row> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: crate::GetDeleteMarker,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }

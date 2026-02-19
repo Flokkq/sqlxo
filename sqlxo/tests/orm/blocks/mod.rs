@@ -6,9 +6,12 @@ use sqlxo::{
 	},
 	or,
 	order_by,
+	select::SelectionList,
 };
 
 use crate::helpers::{
+	Item,
+	ItemColumn,
 	ItemQuery,
 	ItemSort,
 };
@@ -51,4 +54,12 @@ fn sort_macros() {
 		order_by![ItemSort::ByAmountAsc, ItemSort::ByNameDesc];
 
 	assert_eq!(plain_sort, short_macro_sort);
+}
+
+#[test]
+fn take_macro_emits_selection_list_for_blocks() {
+	let plain_take = &["id", "name"];
+	let macro_take = sqlxo::take!(ItemColumn::Id, ItemColumn::Name);
+
+	assert_eq!(plain_take, macro_take.columns());
 }

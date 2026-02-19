@@ -20,6 +20,7 @@ pub mod prelude {
 }
 
 pub mod blocks;
+pub mod select;
 pub mod web;
 
 mod delete;
@@ -37,6 +38,10 @@ pub use insert::{
 pub use read::{
 	ReadQueryBuilder,
 	ReadQueryPlan,
+};
+pub use select::{
+	Column,
+	SelectionList,
 };
 pub use update::{
 	UpdateQueryBuilder,
@@ -90,34 +95,32 @@ pub trait ExecutablePlan<C: QueryContext> {
 }
 
 #[async_trait::async_trait]
-pub trait FetchablePlan<C: QueryContext> {
-	async fn fetch_one<'e, E>(&self, exec: E) -> Result<C::Model, sqlx::Error>
+pub trait FetchablePlan<C: QueryContext, Row> {
+	async fn fetch_one<'e, E>(&self, exec: E) -> Result<Row, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>;
 
-	async fn fetch_all<'e, E>(
-		&self,
-		exec: E,
-	) -> Result<Vec<C::Model>, sqlx::Error>
+	async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>;
 
 	async fn fetch_optional<'e, E>(
 		&self,
 		exec: E,
-	) -> Result<Option<C::Model>, sqlx::Error>
+	) -> Result<Option<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>;
 }
 
-pub trait Planable<C>: ExecutablePlan<C> + FetchablePlan<C>
+pub trait Planable<C, Row>: ExecutablePlan<C> + FetchablePlan<C, Row>
 where
 	C: QueryContext,
 {
 }
 
 pub trait Buildable<C: QueryContext> {
-	type Plan: Planable<C>;
+	type Row;
+	type Plan: Planable<C, Self::Row>;
 
 	fn from_ctx() -> Self;
 	fn build(self) -> Self::Plan;

@@ -1,5 +1,6 @@
 use crate::helpers::{
 	HardDeleteItem,
+	HardDeleteItemColumn,
 	HardDeleteItemQuery,
 	SoftDeleteItem,
 	SoftDeleteItemQuery,
@@ -26,6 +27,7 @@ use sqlxo::QueryBuilder;
 use uuid::Uuid;
 
 use crate::helpers::Item;
+use crate::helpers::ItemColumn;
 use crate::helpers::ItemQuery;
 use crate::helpers::ItemSort;
 
@@ -287,6 +289,24 @@ async fn hard_delete_with_returning() {
 }
 
 #[tokio::test]
+async fn hard_delete_with_take_returns_id() {
+	let pool = get_connection_pool().await;
+	let item = HardDeleteItem::default();
+
+	insert_hard_delete_item(&item, &pool).await.unwrap();
+
+	let (deleted_id,): (Uuid,) = QueryBuilder::<HardDeleteItem>::delete()
+		.take(sqlxo::take!(HardDeleteItemColumn::Id))
+		.r#where(Expression::Leaf(HardDeleteItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(deleted_id, item.id);
+}
+
+#[tokio::test]
 async fn hard_delete_multiple_items() {
 	let pool = get_connection_pool().await;
 	let item1 = HardDeleteItem {
@@ -332,6 +352,7 @@ async fn hard_delete_multiple_items() {
 
 use crate::helpers::{
 	UpdateItem,
+	UpdateItemColumn,
 	UpdateItemQuery,
 	UpdateItemUpdate,
 };
@@ -381,6 +402,35 @@ async fn update_item_single_field() {
 	assert_eq!(updated.description, item.description);
 	assert_eq!(updated.price, item.price);
 	assert!(updated.updated_at.is_some());
+}
+
+#[tokio::test]
+async fn update_item_with_take_returns_tuple() {
+	let pool = get_connection_pool().await;
+	let item = UpdateItem::default();
+
+	insert_update_item(&item, &pool).await.unwrap();
+
+	let update = UpdateItemUpdate {
+		name: Some("take tuple".into()),
+		..Default::default()
+	};
+
+	let (id, updated_at): (Uuid, Option<chrono::DateTime<chrono::Utc>>) =
+		QueryBuilder::<UpdateItem>::update()
+			.model(update)
+			.take(sqlxo::take!(
+				UpdateItemColumn::Id,
+				UpdateItemColumn::UpdatedAt
+			))
+			.r#where(Expression::Leaf(UpdateItemQuery::IdEq(item.id)))
+			.build()
+			.fetch_one(&pool)
+			.await
+			.unwrap();
+
+	assert_eq!(id, item.id);
+	assert!(updated_at.is_some());
 }
 
 #[tokio::test]
@@ -725,6 +775,7 @@ async fn soft_delete_fetch_page_excludes_deleted() {
 
 use crate::helpers::{
 	CreateItem,
+	CreateItemColumn,
 	CreateItemCreation,
 	CreateItemQuery,
 };
@@ -791,6 +842,25 @@ async fn insert_item_with_execute() {
 }
 
 #[tokio::test]
+async fn read_item_with_take_returns_tuple() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+
+	insert_item(&item, &pool).await.unwrap();
+
+	let (name, price): (String, f32) = QueryBuilder::<Item>::read()
+		.take(sqlxo::take!(ItemColumn::Name, ItemColumn::Price))
+		.r#where(Expression::Leaf(ItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(name, item.name);
+	assert!((price - item.price).abs() < f32::EPSILON);
+}
+
+#[tokio::test]
 async fn insert_item_marker_timestamp_auto_set() {
 	let pool = get_connection_pool().await;
 
@@ -812,6 +882,29 @@ async fn insert_item_marker_timestamp_auto_set() {
 	let now = chrono::Utc::now();
 	let diff = (now - inserted.created_at).num_seconds().abs();
 	assert!(diff < 5); // Within 5 seconds
+}
+
+#[tokio::test]
+async fn insert_item_with_take_returns_subset() {
+	let pool = get_connection_pool().await;
+
+	let create = CreateItemCreation {
+		id:          Uuid::new_v4(),
+		name:        "subset insert".into(),
+		description: "subset".into(),
+		price:       11.11,
+	};
+
+	let (id, name): (Uuid, String) = QueryBuilder::<CreateItem>::insert()
+		.model(create.clone())
+		.take(sqlxo::take!(CreateItemColumn::Id, CreateItemColumn::Name))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(id, create.id);
+	assert_eq!(name, create.name);
 }
 
 #[tokio::test]

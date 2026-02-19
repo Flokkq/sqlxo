@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use sqlx::{
 	Executor,
 	Postgres,
@@ -16,6 +18,10 @@ use crate::{
 		SqlWriter,
 		UpdateHead,
 	},
+	select::{
+		self,
+		SelectionList,
+	},
 	Buildable,
 	ExecutablePlan,
 	FetchablePlan,
@@ -23,24 +29,30 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub trait BuildableUpdateQuery<C>:
-	Buildable<C, Plan: Planable<C>> + BuildableFilter<C>
+pub trait BuildableUpdateQuery<C, Row = <C as QueryContext>::Model>:
+	Buildable<C, Row = Row, Plan: Planable<C, Row>> + BuildableFilter<C>
 where
 	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
 
-pub struct UpdateQueryPlan<'a, C: QueryContext>
-where
+pub struct UpdateQueryPlan<
+	'a,
+	C: QueryContext,
+	Row = <C as QueryContext>::Model,
+> where
 	C::Model: Updatable,
 {
-	pub(crate) where_expr:          Option<Expression<C::Query>>,
-	pub(crate) table:               &'a str,
-	pub(crate) update_model:        <C::Model as Updatable>::UpdateModel,
+	pub(crate) where_expr: Option<Expression<C::Query>>,
+	pub(crate) table: &'a str,
+	pub(crate) update_model: <C::Model as Updatable>::UpdateModel,
 	pub(crate) update_marker_field: Option<&'static str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
 }
 
-impl<'a, C> UpdateQueryPlan<'a, C>
+impl<'a, C, Row> UpdateQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
@@ -76,10 +88,11 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, C> ExecutablePlan<C> for UpdateQueryPlan<'a, C>
+impl<'a, C, Row> ExecutablePlan<C> for UpdateQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 	async fn execute<'e, E>(&self, exec: E) -> Result<u64, sqlx::Error>
 	where
@@ -97,65 +110,67 @@ where
 }
 
 #[async_trait::async_trait]
-impl<'a, C> FetchablePlan<C> for UpdateQueryPlan<'a, C>
+impl<'a, C, Row> FetchablePlan<C, Row> for UpdateQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	async fn fetch_one<'e, E>(&self, exec: E) -> Result<C::Model, sqlx::Error>
+	async fn fetch_one<'e, E>(&self, exec: E) -> Result<Row, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
 		let mut qb = self.to_query_builder();
-		qb.push(" RETURNING *");
-		qb.build_query_as::<C::Model>().fetch_one(exec).await
+		select::push_returning(&mut qb, self.table, self.selection.as_ref());
+		qb.build_query_as::<Row>().fetch_one(exec).await
 	}
 
-	async fn fetch_all<'e, E>(
-		&self,
-		exec: E,
-	) -> Result<Vec<C::Model>, sqlx::Error>
+	async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
 		let mut qb = self.to_query_builder();
-		qb.push(" RETURNING *");
-		qb.build_query_as::<C::Model>().fetch_all(exec).await
+		select::push_returning(&mut qb, self.table, self.selection.as_ref());
+		qb.build_query_as::<Row>().fetch_all(exec).await
 	}
 
 	async fn fetch_optional<'e, E>(
 		&self,
 		exec: E,
-	) -> Result<Option<C::Model>, sqlx::Error>
+	) -> Result<Option<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder()
-			.push(" RETURNING *")
-			.build_query_as::<C::Model>()
-			.fetch_optional(exec)
-			.await
+		let mut qb = self.to_query_builder();
+		select::push_returning(&mut qb, self.table, self.selection.as_ref());
+		qb.build_query_as::<Row>().fetch_optional(exec).await
 	}
 }
 
-impl<'a, C> Planable<C> for UpdateQueryPlan<'a, C>
+impl<'a, C, Row> Planable<C, Row> for UpdateQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
 
-pub struct UpdateQueryBuilder<'a, C: QueryContext>
-where
+pub struct UpdateQueryBuilder<
+	'a,
+	C: QueryContext,
+	Row = <C as QueryContext>::Model,
+> where
 	C::Model: Updatable,
 {
-	pub(crate) table:               &'a str,
-	pub(crate) where_expr:          Option<Expression<C::Query>>,
+	pub(crate) table: &'a str,
+	pub(crate) where_expr: Option<Expression<C::Query>>,
 	pub(crate) update_model: Option<<C::Model as Updatable>::UpdateModel>,
 	pub(crate) update_marker_field: Option<&'static str>,
+	pub(crate) selection: Option<SelectionList<C::Model, Row>>,
+	row: PhantomData<Row>,
 }
 
-impl<'a, C> UpdateQueryBuilder<'a, C>
+impl<'a, C, Row> UpdateQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
@@ -169,12 +184,14 @@ where
 	}
 }
 
-impl<'a, C> Buildable<C> for UpdateQueryBuilder<'a, C>
+impl<'a, C, Row> Buildable<C> for UpdateQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
-	type Plan = UpdateQueryPlan<'a, C>;
+	type Row = Row;
+	type Plan = UpdateQueryPlan<'a, C, Row>;
 
 	fn from_ctx() -> Self {
 		Self {
@@ -182,6 +199,8 @@ where
 			where_expr:          None,
 			update_model:        None,
 			update_marker_field: <C::Model as Updatable>::UPDATE_MARKER_FIELD,
+			selection:           None,
+			row:                 PhantomData,
 		}
 	}
 
@@ -195,11 +214,40 @@ where
 			table: self.table,
 			update_model,
 			update_marker_field: self.update_marker_field,
+			selection: self.selection,
+			row: PhantomData,
 		}
 	}
 }
 
-impl<'a, C> BuildableFilter<C> for UpdateQueryBuilder<'a, C>
+impl<'a, C, Row> UpdateQueryBuilder<'a, C, Row>
+where
+	C: QueryContext,
+	C::Model: Updatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+{
+	pub fn take<NewRow>(
+		self,
+		selection: SelectionList<C::Model, NewRow>,
+	) -> UpdateQueryBuilder<'a, C, NewRow>
+	where
+		NewRow: Send
+			+ Sync
+			+ Unpin
+			+ for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+	{
+		UpdateQueryBuilder {
+			table:               self.table,
+			where_expr:          self.where_expr,
+			update_model:        self.update_model,
+			update_marker_field: self.update_marker_field,
+			selection:           Some(selection),
+			row:                 PhantomData,
+		}
+	}
+}
+
+impl<'a, C, Row> BuildableFilter<C> for UpdateQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
@@ -214,9 +262,10 @@ where
 	}
 }
 
-impl<'a, C> BuildableUpdateQuery<C> for UpdateQueryBuilder<'a, C>
+impl<'a, C, Row> BuildableUpdateQuery<C, Row> for UpdateQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
 	C::Model: Updatable,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }

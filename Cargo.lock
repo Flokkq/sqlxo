@@ -1650,6 +1650,7 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_json",
+ "smallvec",
  "sqlx",
  "sqlxo_macros",
  "sqlxo_traits",
