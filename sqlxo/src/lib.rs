@@ -5,6 +5,7 @@
 #![allow(incomplete_features)]
 extern crate self as sqlxo;
 
+pub use smallvec;
 pub use sqlxo_macros::*;
 pub use sqlxo_traits::*;
 

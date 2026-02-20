@@ -52,11 +52,15 @@ fn query_builder() {
 	assert_eq!(
 		plan.sql(SelectType::Star).trim_start(),
 		r#"
-            SELECT *
+            SELECT *, "material__"."id" AS "__sqlxo_material__id",
+                "material__"."name" AS "__sqlxo_material__name",
+                "material__"."long_name" AS "__sqlxo_material__long_name",
+                "material__"."description" AS "__sqlxo_material__description",
+                "material__"."supplier_id" AS "__sqlxo_material__supplier_id"
             FROM item
             LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
-            WHERE (name LIKE $1 AND (price > $2 OR description IS NULL))
-            ORDER BY name ASC, price DESC
+            WHERE ("item"."name" LIKE $1 AND ("item"."price" > $2 OR "item"."description" IS NULL))
+            ORDER BY "item"."name" ASC, "item"."price" DESC
             LIMIT $3 OFFSET $4
         "#
 		.normalize()
@@ -78,7 +82,11 @@ fn nested_join_path_builds_sql() {
 	assert_eq!(
 		plan.sql(SelectType::Star).trim_start().normalize(),
 		r#"
-            SELECT *
+            SELECT *, "material__"."id" AS "__sqlxo_material__id",
+                "material__"."name" AS "__sqlxo_material__name",
+                "material__"."long_name" AS "__sqlxo_material__long_name",
+                "material__"."description" AS "__sqlxo_material__description",
+                "material__"."supplier_id" AS "__sqlxo_material__supplier_id"
             FROM item
             LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
             INNER JOIN supplier AS "material__supplier__" ON "material__"."supplier_id" = "material__supplier__"."id"

@@ -6,6 +6,7 @@ use sqlx::prelude::FromRow;
 use sqlxo::{
 	bind,
 	Delete,
+	JoinValue,
 	Query,
 	SoftDelete,
 	WebQuery,
@@ -49,6 +50,10 @@ pub struct Item {
 
 	#[foreign_key(to = "material.id")]
 	pub material_id: Option<Uuid>,
+
+	#[sqlxo(belongs_to)]
+	#[sqlx(skip)]
+	pub material: JoinValue<Material>,
 }
 
 impl Default for Item {
@@ -62,6 +67,7 @@ impl Default for Item {
 			active:      true,
 			due_date:    chrono::Utc::now(),
 			material_id: None,
+			material:    JoinValue::default(),
 		}
 	}
 }
@@ -84,7 +90,7 @@ pub struct ItemDto {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, FromRow, Clone, Query)]
+#[derive(Debug, FromRow, Clone, Query, PartialEq)]
 pub struct Material {
 	#[primary_key]
 	pub id: Uuid,
@@ -94,10 +100,14 @@ pub struct Material {
 	pub description: String,
 	#[foreign_key(to = "supplier.id")]
 	pub supplier_id: Option<Uuid>,
+
+	#[sqlxo(belongs_to)]
+	#[sqlx(skip)]
+	pub supplier: JoinValue<Supplier>,
 }
 
 #[allow(dead_code)]
-#[derive(Debug, FromRow, Clone, Query)]
+#[derive(Debug, FromRow, Clone, Query, PartialEq)]
 pub struct Supplier {
 	#[primary_key]
 	pub id:   Uuid,

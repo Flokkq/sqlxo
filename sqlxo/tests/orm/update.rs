@@ -72,7 +72,8 @@ fn test_update_sql_exact_match_single_field() {
 
 	assert_eq!(
 		plan.sql().normalize(),
-		"UPDATE update_item SET updated_at = NOW(), name = $1 WHERE id = $2"
+		"UPDATE update_item SET updated_at = NOW(), name = $1 WHERE \
+		 \"update_item\".\"id\" = $2"
 	);
 }
 
@@ -95,7 +96,7 @@ fn test_update_sql_exact_match_multiple_fields() {
 	assert_eq!(
 		plan.sql().normalize(),
 		"UPDATE update_item SET updated_at = NOW(), name = $1, description = \
-		 $2, price = $3 WHERE id = $4"
+		 $2, price = $3 WHERE \"update_item\".\"id\" = $4"
 	);
 }
 
@@ -118,6 +119,6 @@ fn test_update_sql_no_marker_just_fields() {
 	assert_eq!(
 		plan.sql().normalize(),
 		"UPDATE update_item SET updated_at = NOW(), name = $1, description = \
-		 $2 WHERE id = $3"
+		 $2 WHERE \"update_item\".\"id\" = $3"
 	);
 }

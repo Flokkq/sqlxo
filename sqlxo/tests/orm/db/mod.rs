@@ -25,8 +25,11 @@ use sqlxo::order_by;
 use sqlxo::Buildable;
 use sqlxo::ExecutablePlan;
 use sqlxo::FetchablePlan;
-use sqlxo::JoinKind;
 use sqlxo::QueryBuilder;
+use sqlxo::{
+	JoinKind,
+	JoinValue,
+};
 use uuid::Uuid;
 
 use crate::helpers::{
@@ -37,6 +40,7 @@ use crate::helpers::{
 	ItemQuery,
 	ItemSort,
 	Material,
+	MaterialJoin,
 };
 
 #[derive(Debug, Clone)]
@@ -262,7 +266,10 @@ fn full_text_search_respects_manual_ordering() {
 		.build()
 		.sql(SelectType::Star);
 
-	assert!(sql.contains("ORDER BY price ASC"), "unexpected SQL: {sql}");
+	assert!(
+		sql.contains("ORDER BY \"item\".\"price\" ASC"),
+		"unexpected SQL: {sql}"
+	);
 	assert!(
 		!sql.contains("ts_rank("),
 		"manual order should suppress rank ordering: {sql}"
@@ -981,6 +988,142 @@ async fn read_item_with_joined_take_returns_tuple() {
 
 	assert_eq!(item_id, item.id);
 	assert_eq!(joined_material_id, material_id);
+}
+
+#[tokio::test]
+async fn navigation_not_loaded_without_join() {
+	let pool = get_connection_pool().await;
+	let mut item = Item::default();
+	let material_id = Uuid::new_v4();
+
+	sqlx::query(
+		r#"
+            INSERT INTO material (id, name, long_name, description, supplier_id)
+            VALUES ($1, $2, $3, $4, $5)
+        "#,
+	)
+	.bind(material_id)
+	.bind("nav material")
+	.bind("nav material long")
+	.bind("nav material desc")
+	.bind(Option::<Uuid>::None)
+	.execute(&pool)
+	.await
+	.unwrap();
+
+	item.material_id = Some(material_id);
+	insert_item(&item, &pool).await.unwrap();
+
+	let fetched: Item = QueryBuilder::<Item>::read()
+		.r#where(Expression::Leaf(ItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert!(matches!(fetched.material, JoinValue::NotLoaded));
+}
+
+#[tokio::test]
+async fn navigation_loaded_with_join() {
+	let pool = get_connection_pool().await;
+	let mut item = Item::default();
+	let material_id = Uuid::new_v4();
+
+	sqlx::query(
+		r#"
+            INSERT INTO material (id, name, long_name, description, supplier_id)
+            VALUES ($1, $2, $3, $4, $5)
+        "#,
+	)
+	.bind(material_id)
+	.bind("nav material")
+	.bind("nav material long")
+	.bind("nav material desc")
+	.bind(Option::<Uuid>::None)
+	.execute(&pool)
+	.await
+	.unwrap();
+
+	item.material_id = Some(material_id);
+	insert_item(&item, &pool).await.unwrap();
+
+	let fetched: Item = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Left)
+		.r#where(Expression::Leaf(ItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.material {
+		JoinValue::Loaded(material) => {
+			assert_eq!(material.id, material_id);
+			assert_eq!(material.name, "nav material");
+		}
+		other => panic!("unexpected navigation state: {:?}", other),
+	}
+}
+
+#[tokio::test]
+async fn navigation_loaded_with_nested_join() {
+	let pool = get_connection_pool().await;
+	let supplier_id = Uuid::new_v4();
+	let material_id = Uuid::new_v4();
+	let mut item = Item::default();
+
+	sqlx::query(
+		r#"
+            INSERT INTO supplier (id, name)
+            VALUES ($1, $2)
+        "#,
+	)
+	.bind(supplier_id)
+	.bind("nested supplier")
+	.execute(&pool)
+	.await
+	.unwrap();
+
+	sqlx::query(
+		r#"
+            INSERT INTO material (id, name, long_name, description, supplier_id)
+            VALUES ($1, $2, $3, $4, $5)
+        "#,
+	)
+	.bind(material_id)
+	.bind("nested material")
+	.bind("nested material long name")
+	.bind("nested material desc")
+	.bind(Some(supplier_id))
+	.execute(&pool)
+	.await
+	.unwrap();
+
+	item.material_id = Some(material_id);
+	insert_item(&item, &pool).await.unwrap();
+
+	let path = ItemJoin::ItemToMaterialByMaterialId
+		.path(JoinKind::Left)
+		.then(MaterialJoin::MaterialToSupplierBySupplierId, JoinKind::Left);
+
+	let plan = QueryBuilder::<Item>::read()
+		.join_path(path)
+		.r#where(Expression::Leaf(ItemQuery::IdEq(item.id)))
+		.build();
+
+	let fetched = plan.fetch_one(&pool).await.unwrap();
+
+	match fetched.material {
+		JoinValue::Loaded(material) => match material.supplier {
+			JoinValue::Loaded(supplier) => {
+				assert_eq!(material.id, material_id);
+				assert_eq!(supplier.id, supplier_id);
+				assert_eq!(supplier.name, "nested supplier");
+			}
+			other => panic!("expected supplier join to load, got {:?}", other),
+		},
+		other => panic!("expected material join to load, got {:?}", other),
+	}
 }
 
 #[tokio::test]

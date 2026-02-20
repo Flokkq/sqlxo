@@ -116,36 +116,44 @@ fn sort_enum_variants_exist() {
 
 #[test]
 fn string_ops_write_expected_sql() {
-	assert_write(NameEq("foo".into()), "name = $1", 1);
-	assert_write(NameNeq("bar".into()), "name <> $1", 1);
-	assert_write(NameLike("%x%".into()), "name LIKE $1", 1);
-	assert_write(NameNotLike("%x%".into()), "name NOT LIKE $1", 1);
-	assert_write(DescriptionIsNull, "description IS NULL", 0);
-	assert_write(DescriptionIsNotNull, "description IS NOT NULL", 0);
+	assert_write(NameEq("foo".into()), r#""item"."name" = $1"#, 1);
+	assert_write(NameNeq("bar".into()), r#""item"."name" <> $1"#, 1);
+	assert_write(NameLike("%x%".into()), r#""item"."name" LIKE $1"#, 1);
+	assert_write(NameNotLike("%x%".into()), r#""item"."name" NOT LIKE $1"#, 1);
+	assert_write(DescriptionIsNull, r#""item"."description" IS NULL"#, 0);
+	assert_write(
+		DescriptionIsNotNull,
+		r#""item"."description" IS NOT NULL"#,
+		0,
+	);
 }
 
 #[test]
 fn bool_ops_write_expected_sql() {
-	assert_write(ActiveIsTrue, "active = TRUE", 0);
-	assert_write(ActiveIsFalse, "active = FALSE", 0);
+	assert_write(ActiveIsTrue, r#""item"."active" = TRUE"#, 0);
+	assert_write(ActiveIsFalse, r#""item"."active" = FALSE"#, 0);
 }
 
 #[test]
 fn numeric_ops_write_expected_sql_and_binds() {
-	assert_write(PriceEq(1.5), "price = $1", 1);
-	assert_write(PriceNeq(1.5), "price <> $1", 1);
-	assert_write(PriceGt(2.0), "price > $1", 1);
-	assert_write(PriceGte(2.0), "price >= $1", 1);
-	assert_write(PriceLt(2.0), "price < $1", 1);
-	assert_write(PriceLte(2.0), "price <= $1", 1);
-	assert_write(PriceBetween(10.0, 99.0), "price BETWEEN $1 AND $2", 2);
+	assert_write(PriceEq(1.5), r#""item"."price" = $1"#, 1);
+	assert_write(PriceNeq(1.5), r#""item"."price" <> $1"#, 1);
+	assert_write(PriceGt(2.0), r#""item"."price" > $1"#, 1);
+	assert_write(PriceGte(2.0), r#""item"."price" >= $1"#, 1);
+	assert_write(PriceLt(2.0), r#""item"."price" < $1"#, 1);
+	assert_write(PriceLte(2.0), r#""item"."price" <= $1"#, 1);
+	assert_write(
+		PriceBetween(10.0, 99.0),
+		r#""item"."price" BETWEEN $1 AND $2"#,
+		2,
+	);
 	assert_write(
 		PriceNotBetween(10.0, 99.0),
-		"price NOT BETWEEN $1 AND $2",
+		r#""item"."price" NOT BETWEEN $1 AND $2"#,
 		2,
 	);
 
-	assert_write(AmountGt(5), "amount > $1", 1);
+	assert_write(AmountGt(5), r#""item"."amount" > $1"#, 1);
 }
 
 #[test]
@@ -154,16 +162,16 @@ fn uuid_ops_write_expected_sql() {
 	let mut w = DummyWriter::default();
 
 	IdEq(uid).write(&mut w);
-	assert_eq!(w.sql, "id = $1");
+	assert_eq!(w.sql, r#""item"."id" = $1"#);
 	assert_eq!(w.binds, 1);
 
 	let mut w = DummyWriter::default();
 	IdNeq(uid).write(&mut w);
-	assert_eq!(w.sql, "id <> $1");
+	assert_eq!(w.sql, r#""item"."id" <> $1"#);
 	assert_eq!(w.binds, 1);
 
-	assert_write(IdIsNull, "id IS NULL", 0);
-	assert_write(IdIsNotNull, "id IS NOT NULL", 0);
+	assert_write(IdIsNull, r#""item"."id" IS NULL"#, 0);
+	assert_write(IdIsNotNull, r#""item"."id" IS NOT NULL"#, 0);
 }
 
 #[test]
@@ -176,32 +184,32 @@ fn datetime_ops_write_expected_sql() {
 
 	let mut w = DummyWriter::default();
 	DueDateEq(now).write(&mut w);
-	assert_eq!(w.sql, "due_date = $1");
+	assert_eq!(w.sql, r#""item"."due_date" = $1"#);
 	assert_eq!(w.binds, 1);
 
 	let mut w = DummyWriter::default();
 	DueDateBetween(now, now).write(&mut w);
-	assert_eq!(w.sql, "due_date BETWEEN $1 AND $2");
+	assert_eq!(w.sql, r#""item"."due_date" BETWEEN $1 AND $2"#);
 	assert_eq!(w.binds, 2);
 
-	assert_write(DueDateIsNull, "due_date IS NULL", 0);
-	assert_write(DueDateIsNotNull, "due_date IS NOT NULL", 0);
+	assert_write(DueDateIsNull, r#""item"."due_date" IS NULL"#, 0);
+	assert_write(DueDateIsNotNull, r#""item"."due_date" IS NOT NULL"#, 0);
 }
 
 #[test]
 fn sort_variants_emit_expected_clauses() {
-	assert_eq!(ByNameAsc.sort_clause(), "name ASC");
-	assert_eq!(ByNameDesc.sort_clause(), "name DESC");
+	assert_eq!(ByNameAsc.sort_clause(), r#""item"."name" ASC"#);
+	assert_eq!(ByNameDesc.sort_clause(), r#""item"."name" DESC"#);
 
-	assert_eq!(ByPriceAsc.sort_clause(), "price ASC");
-	assert_eq!(ByPriceDesc.sort_clause(), "price DESC");
+	assert_eq!(ByPriceAsc.sort_clause(), r#""item"."price" ASC"#);
+	assert_eq!(ByPriceDesc.sort_clause(), r#""item"."price" DESC"#);
 
-	assert_eq!(ByAmountAsc.sort_clause(), "amount ASC");
-	assert_eq!(ByAmountDesc.sort_clause(), "amount DESC");
+	assert_eq!(ByAmountAsc.sort_clause(), r#""item"."amount" ASC"#);
+	assert_eq!(ByAmountDesc.sort_clause(), r#""item"."amount" DESC"#);
 
-	assert_eq!(ByActiveAsc.sort_clause(), "active ASC");
-	assert_eq!(ByActiveDesc.sort_clause(), "active DESC");
+	assert_eq!(ByActiveAsc.sort_clause(), r#""item"."active" ASC"#);
+	assert_eq!(ByActiveDesc.sort_clause(), r#""item"."active" DESC"#);
 
-	assert_eq!(ByDueDateAsc.sort_clause(), "due_date ASC");
-	assert_eq!(ByDueDateDesc.sort_clause(), "due_date DESC");
+	assert_eq!(ByDueDateAsc.sort_clause(), r#""item"."due_date" ASC"#);
+	assert_eq!(ByDueDateDesc.sort_clause(), r#""item"."due_date" DESC"#);
 }

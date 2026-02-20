@@ -48,7 +48,7 @@ fn dto_filter_combined_with_inline_filter() {
 		r#"
         SELECT *
         FROM item
-        WHERE (name LIKE $1 AND (name IS NULL AND amount = $2)) ORDER BY name ASC
+        WHERE ("item"."name" LIKE $1 AND ("item"."name" IS NULL AND "item"."amount" = $2)) ORDER BY "item"."name" ASC
     "#
 		.normalize()
 	);

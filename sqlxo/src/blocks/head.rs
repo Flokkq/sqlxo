@@ -1,5 +1,6 @@
 use core::fmt;
 use smallvec::SmallVec;
+use sqlxo_traits::AliasedColumn;
 use std::{
 	borrow::Cow,
 	fmt::{
@@ -17,8 +18,10 @@ pub struct QualifiedColumn {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SelectType {
 	Star,
+	StarWithExtras(SmallVec<[AliasedColumn; 4]>),
 	Aggregation(AggregationType),
 	StarAndCount,
+	StarAndCountExtras(SmallVec<[AliasedColumn; 4]>),
 	Exists,
 	Columns(SmallVec<[QualifiedColumn; 4]>),
 }
@@ -75,6 +78,11 @@ impl<'a> Display for ReadHead<'a> {
 			SelectType::Star => {
 				write!(f, "SELECT * FROM {}", self.table)
 			}
+			SelectType::StarWithExtras(cols) => {
+				write!(f, "SELECT *")?;
+				write_extras(cols, f)?;
+				write!(f, " FROM {}", self.table)
+			}
 			SelectType::Aggregation(agg) => {
 				write!(f, "SELECT {}(*) FROM {}", agg, self.table)
 			}
@@ -84,6 +92,11 @@ impl<'a> Display for ReadHead<'a> {
 					"SELECT *, COUNT(*) OVER() AS total_count FROM {}",
 					self.table
 				)
+			}
+			SelectType::StarAndCountExtras(cols) => {
+				write!(f, "SELECT *, COUNT(*) OVER() AS total_count",)?;
+				write_extras(cols, f)?;
+				write!(f, " FROM {}", self.table)
 			}
 			SelectType::Exists => {
 				write!(f, "SELECT EXISTS(SELECT 1 FROM {}", self.table)
@@ -103,6 +116,17 @@ impl<'a> Display for ReadHead<'a> {
 			   * BuildType::Raw => write!(f, ""), */
 		}
 	}
+}
+
+fn write_extras(cols: &[AliasedColumn], f: &mut Formatter<'_>) -> fmt::Result {
+	for col in cols {
+		write!(
+			f,
+			r#", "{}"."{}" AS "{}""#,
+			col.table_alias, col.column, col.alias
+		)?;
+	}
+	Ok(())
 }
 
 pub struct DeleteHead<'a> {

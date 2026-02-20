@@ -290,16 +290,49 @@ fn extract_marker_fields(
 }
 
 struct FkSpec {
-	fk_field_snake:  String,
-	fk_field_pascal: Ident,
-	right_table:     String,
-	right_pk:        String,
+	fk_field_snake: String,
+	right_table:    String,
+	right_pk:       String,
+	alias_segment:  String,
+	variant_ident:  Ident,
 	#[allow(dead_code)] // Will be used for future cascade behavior
 	cascade_type: Option<CascadeType>,
 }
 
+#[derive(Debug, Clone)]
+struct NavigationAttr {
+	via: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingNavigation {
+	field_ident:    Ident,
+	field_name:     String,
+	ty:             syn::Type,
+	via_field_name: String,
+}
+
+#[derive(Debug, Clone)]
+struct NavigationFieldSpec {
+	field_ident:     Ident,
+	join_identifier: String,
+	related_ty:      syn::Type,
+}
+
+#[derive(Debug, Clone)]
+struct DbFieldSpec {
+	field_ident: Ident,
+	column_name: String,
+	ty:          syn::Type,
+}
+
+#[derive(Debug, Clone)]
+struct SkipFieldSpec {
+	field_ident: Ident,
+}
+
 fn build_join_codegen(
-	left_struct: &Ident,
+	_left_struct: &Ident,
 	left_table: &str,
 	fks: &[FkSpec],
 ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
@@ -317,32 +350,13 @@ fn build_join_codegen(
 	}
 
 	for fk in fks {
-		let right_pascal = fk.right_table.to_pascal_case();
-		let var = format_ident!(
-			"{}To{}By{}",
-			left_struct,
-			right_pascal,
-			fk.fk_field_pascal
-		);
+		let var = &fk.variant_ident;
 
 		variants.push(quote! { #var });
 
 		let right_table = fk.right_table.clone();
-		let alias_segment = {
-			let mut base = fk.fk_field_snake.clone();
-			if let Some(stripped) = base.strip_suffix("_id") {
-				if !stripped.is_empty() {
-					base = stripped.to_string();
-				}
-			}
-			if base.is_empty() {
-				base = fk.fk_field_snake.clone();
-			}
-			format!("{}__", base)
-		};
-
 		let alias_segment =
-			syn::LitStr::new(&alias_segment, proc_macro2::Span::call_site());
+			syn::LitStr::new(&fk.alias_segment, proc_macro2::Span::call_site());
 		let left_table_lit =
 			syn::LitStr::new(left_table, proc_macro2::Span::call_site());
 		let left_field_lit = syn::LitStr::new(
@@ -353,6 +367,10 @@ fn build_join_codegen(
 			syn::LitStr::new(&right_table, proc_macro2::Span::call_site());
 		let right_field_lit =
 			syn::LitStr::new(&fk.right_pk, proc_macro2::Span::call_site());
+		let identifier_lit = syn::LitStr::new(
+			&fk.variant_ident.to_string(),
+			proc_macro2::Span::call_site(),
+		);
 
 		descriptor_arms.push(quote! {
 			Self::#var => #root::JoinDescriptor {
@@ -361,11 +379,155 @@ fn build_join_codegen(
 				right_table:   #right_table_lit,
 				right_field:   #right_field_lit,
 				alias_segment: #alias_segment,
+				identifier:    #identifier_lit,
 			}
 		});
 	}
 
 	(variants, descriptor_arms)
+}
+
+fn derive_alias_segment(field_name: &str) -> String {
+	let mut base = field_name.to_string();
+	if let Some(stripped) = base.strip_suffix("_id") {
+		if !stripped.is_empty() {
+			base = stripped.to_string();
+		}
+	}
+	if base.is_empty() {
+		base = field_name.to_string();
+	}
+	format!("{}__", base)
+}
+
+fn has_sqlx_skip(field: &syn::Field) -> syn::Result<bool> {
+	for attr in &field.attrs {
+		if !attr.path.is_ident("sqlx") {
+			continue;
+		}
+
+		let meta = attr.parse_meta().map_err(|_| {
+			syn::Error::new_spanned(attr, "invalid #[sqlx] attribute")
+		})?;
+
+		let Meta::List(list) = meta else {
+			continue;
+		};
+
+		for nested in list.nested {
+			if let NestedMeta::Meta(Meta::Path(path)) = nested {
+				if path.is_ident("skip") {
+					return Ok(true);
+				}
+			}
+		}
+	}
+
+	Ok(false)
+}
+
+fn extract_navigation_attr(
+	field: &syn::Field,
+) -> syn::Result<Option<NavigationAttr>> {
+	let mut navigation: Option<NavigationAttr> = None;
+
+	for attr in &field.attrs {
+		if !attr.path.is_ident("sqlxo") {
+			continue;
+		}
+
+		let meta = attr.parse_meta().map_err(|_| {
+			syn::Error::new_spanned(attr, "invalid #[sqlxo] attribute")
+		})?;
+
+		let Meta::List(list) = meta else {
+			continue;
+		};
+
+		for nested in list.nested {
+			match nested {
+				NestedMeta::Meta(Meta::Path(path))
+					if path.is_ident("belongs_to") =>
+				{
+					if navigation.is_some() {
+						return Err(syn::Error::new_spanned(
+							path,
+							"duplicate navigation attribute",
+						));
+					}
+					navigation = Some(NavigationAttr { via: None });
+				}
+				NestedMeta::Meta(Meta::List(inner))
+					if inner.path.is_ident("belongs_to") =>
+				{
+					if navigation.is_some() {
+						return Err(syn::Error::new_spanned(
+							inner.path,
+							"duplicate navigation attribute",
+						));
+					}
+					let mut via: Option<String> = None;
+					for option in inner.nested.iter() {
+						match option {
+							NestedMeta::Meta(Meta::NameValue(nv))
+								if nv.path.is_ident("via") =>
+							{
+								if via.is_some() {
+									return Err(syn::Error::new_spanned(
+										nv,
+										"duplicate `via` option",
+									));
+								}
+								match &nv.lit {
+									Lit::Str(s) => {
+										via = Some(s.value());
+									}
+									other => {
+										return Err(syn::Error::new_spanned(
+											other,
+											"`via` must be a string",
+										));
+									}
+								}
+							}
+							other => {
+								return Err(syn::Error::new_spanned(
+									other,
+									"unknown belongs_to option",
+								));
+							}
+						}
+					}
+					navigation = Some(NavigationAttr { via });
+				}
+				_ => {}
+			}
+		}
+	}
+
+	Ok(navigation)
+}
+
+fn extract_join_value_inner(ty: &syn::Type) -> Option<syn::Type> {
+	match ty {
+		syn::Type::Path(type_path) => {
+			let segment = type_path.path.segments.last()?;
+			if segment.ident != "JoinValue" {
+				return None;
+			}
+
+			if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+			{
+				if let Some(syn::GenericArgument::Type(inner)) =
+					args.args.first()
+				{
+					return Some(inner.clone());
+				}
+			}
+			None
+		}
+		_ => None,
+	}
 }
 
 #[proc_macro_derive(Query, attributes(sqlxo, primary_key, foreign_key))]
@@ -425,7 +587,12 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 	let mut column_type_aliases = Vec::new();
 
 	let mut pk_field: Option<String> = None;
+	let mut pk_field_ty: Option<syn::Type> = None;
 	let mut fks: Vec<FkSpec> = Vec::new();
+	let mut pending_navigation: Vec<PendingNavigation> = Vec::new();
+	let mut navigation_fields: Vec<NavigationFieldSpec> = Vec::new();
+	let mut db_fields: Vec<DbFieldSpec> = Vec::new();
+	let mut skip_fields: Vec<SkipFieldSpec> = Vec::new();
 
 	for field in fields.iter() {
 		let field_ident = field.ident.clone().unwrap();
@@ -433,6 +600,58 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		let field_name_snake = field_ident.to_string().to_snake_case();
 		let ty = &field.ty;
 		let column_struct_ident = format_ident!("{}", field_name_pascal);
+		let is_sqlx_skip = match has_sqlx_skip(field) {
+			Ok(val) => val,
+			Err(e) => return e.to_compile_error().into(),
+		};
+		let navigation_attr = match extract_navigation_attr(field) {
+			Ok(val) => val,
+			Err(e) => return e.to_compile_error().into(),
+		};
+
+		if let Some(attr) = navigation_attr {
+			if !is_sqlx_skip {
+				return Error::new_spanned(
+					field,
+					"navigation properties must be marked with #[sqlx(skip)]",
+				)
+				.to_compile_error()
+				.into();
+			}
+
+			let Some(inner_ty) = extract_join_value_inner(ty) else {
+				return Error::new_spanned(
+					ty,
+					"navigation properties must use JoinValue<T>",
+				)
+				.to_compile_error()
+				.into();
+			};
+
+			let via = attr
+				.via
+				.unwrap_or_else(|| format!("{}_id", field_name_snake));
+
+			pending_navigation.push(PendingNavigation {
+				field_ident:    field_ident.clone(),
+				field_name:     field_name_snake.clone(),
+				ty:             inner_ty,
+				via_field_name: via,
+			});
+
+			skip_fields.push(SkipFieldSpec {
+				field_ident: field_ident.clone(),
+			});
+
+			continue;
+		}
+
+		if is_sqlx_skip {
+			skip_fields.push(SkipFieldSpec {
+				field_ident: field_ident.clone(),
+			});
+			continue;
+		}
 
 		column_structs.push(quote! {
 			#[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -451,6 +670,11 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		column_type_aliases.push(quote! {
 			pub type #alias_ident = #column_mod_ident::#column_struct_ident;
 		});
+		db_fields.push(DbFieldSpec {
+			field_ident: field_ident.clone(),
+			column_name: field_name_snake.clone(),
+			ty:          ty.clone(),
+		});
 
 		for attr in &field.attrs {
 			if attr.path.is_ident("primary_key") {
@@ -460,6 +684,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 						.into();
 				}
 				pk_field = Some(field_name_snake.clone());
+				pk_field_ty = Some(ty.clone());
 			}
 
 			if attr.path.is_ident("foreign_key") {
@@ -574,11 +799,21 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 					.into();
 				}
 
+				let alias_segment = derive_alias_segment(&field_name_snake);
+				let right_pascal = right_table.to_pascal_case();
+				let variant_ident = format_ident!(
+					"{}To{}By{}",
+					struct_ident,
+					right_pascal,
+					field_name_pascal
+				);
+
 				fks.push(FkSpec {
 					fk_field_snake: field_name_snake.clone(),
-					fk_field_pascal: format_ident!("{}", field_name_pascal),
 					right_table,
 					right_pk,
+					alias_segment,
+					variant_ident,
 					cascade_type,
 				});
 			}
@@ -590,10 +825,17 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		sort_variants.push(quote! { #asc });
 		sort_variants.push(quote! { #desc });
 
-		let col: &str = &field_name_snake;
+		let qualified_col =
+			format!(r#""{}"."{}""#, table_name, field_name_snake,);
+		let qualified_col_lit =
+			syn::LitStr::new(&qualified_col, proc_macro2::Span::call_site());
 
-		sort_sql_arms.push(quote! { Self::#asc  => format!("{} ASC",  #col) });
-		sort_sql_arms.push(quote! { Self::#desc => format!("{} DESC", #col) });
+		sort_sql_arms.push(
+			quote! { Self::#asc  => format!(concat!(#qualified_col_lit, " ASC")) },
+		);
+		sort_sql_arms.push(
+			quote! { Self::#desc => format!(concat!(#qualified_col_lit, " DESC")) },
+		);
 
 		match classify_type(ty) {
 			Kind::String => {
@@ -612,12 +854,12 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				query_variants.push(quote! { #v_is_null      });
 				query_variants.push(quote! { #v_is_notnul    });
 
-				write_arms.push(quote! { Self::#v_eq(v)       => { w.push(concat!(#col, " = "));       w.bind(v.clone()); } });
-				write_arms.push(quote! { Self::#v_neq(v)      => { w.push(concat!(#col, " <> "));      w.bind(v.clone()); } });
-				write_arms.push(quote! { Self::#v_like(v)     => { w.push(concat!(#col, " LIKE "));    w.bind(v.clone()); } });
-				write_arms.push(quote! { Self::#v_not_like(v) => { w.push(concat!(#col, " NOT LIKE "));w.bind(v.clone()); } });
-				write_arms.push(quote! { Self::#v_is_null     => { w.push(concat!(#col, " IS NULL"));                         } });
-				write_arms.push(quote! { Self::#v_is_notnul   => { w.push(concat!(#col, " IS NOT NULL"));                     } });
+				write_arms.push(quote! { Self::#v_eq(v)       => { w.push(concat!(#qualified_col_lit, " = "));       w.bind(v.clone()); } });
+				write_arms.push(quote! { Self::#v_neq(v)      => { w.push(concat!(#qualified_col_lit, " <> "));      w.bind(v.clone()); } });
+				write_arms.push(quote! { Self::#v_like(v)     => { w.push(concat!(#qualified_col_lit, " LIKE "));    w.bind(v.clone()); } });
+				write_arms.push(quote! { Self::#v_not_like(v) => { w.push(concat!(#qualified_col_lit, " NOT LIKE "));w.bind(v.clone()); } });
+				write_arms.push(quote! { Self::#v_is_null     => { w.push(concat!(#qualified_col_lit, " IS NULL"));                         } });
+				write_arms.push(quote! { Self::#v_is_notnul   => { w.push(concat!(#qualified_col_lit, " IS NOT NULL"));                     } });
 			}
 
 			Kind::Bool => {
@@ -628,10 +870,10 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				query_variants.push(quote! { #v_false });
 
 				write_arms.push(
-					quote! { Self::#v_true  => { w.push(concat!(#col, " = TRUE"));  } },
+					quote! { Self::#v_true  => { w.push(concat!(#qualified_col_lit, " = TRUE"));  } },
 				);
 				write_arms.push(
-					quote! { Self::#v_false => { w.push(concat!(#col, " = FALSE")); } },
+					quote! { Self::#v_false => { w.push(concat!(#qualified_col_lit, " = FALSE")); } },
 				);
 			}
 
@@ -656,27 +898,27 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				query_variants.push(quote! { #v_notbetween(#ty,#ty) });
 
 				write_arms.push(
-                    quote! { Self::#v_eq(v)  => { w.push(concat!(#col, " = "));  w.bind(*v); } },
+                    quote! { Self::#v_eq(v)  => { w.push(concat!(#qualified_col_lit, " = "));  w.bind(*v); } },
                 );
 				write_arms.push(
-                    quote! { Self::#v_neq(v) => { w.push(concat!(#col, " <> ")); w.bind(*v); } },
+                    quote! { Self::#v_neq(v) => { w.push(concat!(#qualified_col_lit, " <> ")); w.bind(*v); } },
                 );
 				write_arms.push(
-                    quote! { Self::#v_gt(v)  => { w.push(concat!(#col, " > "));  w.bind(*v); } },
+                    quote! { Self::#v_gt(v)  => { w.push(concat!(#qualified_col_lit, " > "));  w.bind(*v); } },
                 );
 				write_arms.push(
-                    quote! { Self::#v_gte(v) => { w.push(concat!(#col, " >= ")); w.bind(*v); } },
+                    quote! { Self::#v_gte(v) => { w.push(concat!(#qualified_col_lit, " >= ")); w.bind(*v); } },
                 );
 				write_arms.push(
-                    quote! { Self::#v_lt(v)  => { w.push(concat!(#col, " < "));  w.bind(*v); } },
+                    quote! { Self::#v_lt(v)  => { w.push(concat!(#qualified_col_lit, " < "));  w.bind(*v); } },
                 );
 				write_arms.push(
-                    quote! { Self::#v_lte(v) => { w.push(concat!(#col, " <= ")); w.bind(*v); } },
+                    quote! { Self::#v_lte(v) => { w.push(concat!(#qualified_col_lit, " <= ")); w.bind(*v); } },
                 );
 
 				write_arms.push(quote! {
 					Self::#v_between(a, b) => {
-						w.push(concat!(#col, " BETWEEN "));
+						w.push(concat!(#qualified_col_lit, " BETWEEN "));
 						w.bind(*a);
 						w.push(" AND ");
 						w.bind(*b);
@@ -685,7 +927,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 				write_arms.push(quote! {
 					Self::#v_notbetween(a, b) => {
-						w.push(concat!(#col, " NOT BETWEEN "));
+						w.push(concat!(#qualified_col_lit, " NOT BETWEEN "));
 						w.bind(*a);
 						w.push(" AND ");
 						w.bind(*b);
@@ -705,10 +947,10 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				query_variants.push(quote! { #v_is_null });
 				query_variants.push(quote! { #v_is_notnul });
 
-				write_arms.push(quote! { Self::#v_eq(v)      => { w.push(concat!(#col, " = "));       w.bind(v.clone()); } });
-				write_arms.push(quote! { Self::#v_neq(v)     => { w.push(concat!(#col, " <> "));      w.bind(v.clone()); } });
-				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#col, " IS NULL"));                 } });
-				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#col, " IS NOT NULL"));             } });
+				write_arms.push(quote! { Self::#v_eq(v)      => { w.push(concat!(#qualified_col_lit, " = "));       w.bind(v.clone()); } });
+				write_arms.push(quote! { Self::#v_neq(v)     => { w.push(concat!(#qualified_col_lit, " <> "));      w.bind(v.clone()); } });
+				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#qualified_col_lit, " IS NULL"));                 } });
+				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#qualified_col_lit, " IS NOT NULL"));             } });
 			}
 
 			Kind::DateTime => {
@@ -736,16 +978,16 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				query_variants.push(quote! { #v_is_null });
 				query_variants.push(quote! { #v_is_notnul });
 
-				write_arms.push(quote! { Self::#v_eq(v)  => { w.push(concat!(#col, " = "));  w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_neq(v) => { w.push(concat!(#col, " <> ")); w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_gt(v)  => { w.push(concat!(#col, " > "));  w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_gte(v) => { w.push(concat!(#col, " >= ")); w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_lt(v)  => { w.push(concat!(#col, " < "));  w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_lte(v) => { w.push(concat!(#col, " <= ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_eq(v)  => { w.push(concat!(#qualified_col_lit, " = "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_neq(v) => { w.push(concat!(#qualified_col_lit, " <> ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gt(v)  => { w.push(concat!(#qualified_col_lit, " > "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gte(v) => { w.push(concat!(#qualified_col_lit, " >= ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lt(v)  => { w.push(concat!(#qualified_col_lit, " < "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lte(v) => { w.push(concat!(#qualified_col_lit, " <= ")); w.bind(*v); } });
 
 				write_arms.push(quote! {
 					Self::#v_between(a, b) => {
-						w.push(concat!(#col, " BETWEEN "));
+						w.push(concat!(#qualified_col_lit, " BETWEEN "));
 						w.bind(*a);
 						w.push(" AND ");
 						w.bind(*b);
@@ -754,14 +996,14 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 				write_arms.push(quote! {
 					Self::#v_notbetween(a, b) => {
-						w.push(concat!(#col, " NOT BETWEEN "));
+						w.push(concat!(#qualified_col_lit, " NOT BETWEEN "));
 						w.bind(*a);
 						w.push(" AND ");
 						w.bind(*b);
 					}
 				});
-				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#col, " IS NULL"));     } });
-				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#col, " IS NOT NULL")); } });
+				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#qualified_col_lit, " IS NULL"));     } });
+				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#qualified_col_lit, " IS NOT NULL")); } });
 			}
 
 			Kind::Date | Kind::Time => {
@@ -789,16 +1031,16 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				query_variants.push(quote! { #v_is_null });
 				query_variants.push(quote! { #v_is_notnul });
 
-				write_arms.push(quote! { Self::#v_eq(v)  => { w.push(concat!(#col, " = "));  w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_neq(v) => { w.push(concat!(#col, " <> ")); w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_gt(v)  => { w.push(concat!(#col, " > "));  w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_gte(v) => { w.push(concat!(#col, " >= ")); w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_lt(v)  => { w.push(concat!(#col, " < "));  w.bind(*v); } });
-				write_arms.push(quote! { Self::#v_lte(v) => { w.push(concat!(#col, " <= ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_eq(v)  => { w.push(concat!(#qualified_col_lit, " = "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_neq(v) => { w.push(concat!(#qualified_col_lit, " <> ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gt(v)  => { w.push(concat!(#qualified_col_lit, " > "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_gte(v) => { w.push(concat!(#qualified_col_lit, " >= ")); w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lt(v)  => { w.push(concat!(#qualified_col_lit, " < "));  w.bind(*v); } });
+				write_arms.push(quote! { Self::#v_lte(v) => { w.push(concat!(#qualified_col_lit, " <= ")); w.bind(*v); } });
 
 				write_arms.push(quote! {
 					Self::#v_between(a, b) => {
-						w.push(concat!(#col, " BETWEEN "));
+						w.push(concat!(#qualified_col_lit, " BETWEEN "));
 						w.bind(*a);
 						w.push(" AND ");
 						w.bind(*b);
@@ -807,20 +1049,218 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 				write_arms.push(quote! {
 					Self::#v_notbetween(a, b) => {
-						w.push(concat!(#col, " NOT BETWEEN "));
+						w.push(concat!(#qualified_col_lit, " NOT BETWEEN "));
 						w.bind(*a);
 						w.push(" AND ");
 						w.bind(*b);
 					}
 				});
-				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#col, " IS NULL"));     } });
-				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#col, " IS NOT NULL")); } });
+				write_arms.push(quote! { Self::#v_is_null    => { w.push(concat!(#qualified_col_lit, " IS NULL"));     } });
+				write_arms.push(quote! { Self::#v_is_notnul  => { w.push(concat!(#qualified_col_lit, " IS NOT NULL")); } });
 			}
 		}
 	}
 
 	let (join_variants, join_descriptor_arms) =
 		build_join_codegen(struct_ident, &table_name, &fks);
+
+	for pending in pending_navigation {
+		let fk = match fks
+			.iter()
+			.find(|fk| fk.fk_field_snake == pending.via_field_name)
+		{
+			Some(fk) => fk,
+			None => {
+				return Error::new(
+					struct_ident.span(),
+					format!(
+						"navigation property `{}` references unknown foreign \
+						 key `{}`",
+						pending.field_name, pending.via_field_name
+					),
+				)
+				.to_compile_error()
+				.into()
+			}
+		};
+
+		navigation_fields.push(NavigationFieldSpec {
+			field_ident:     pending.field_ident.clone(),
+			join_identifier: fk.variant_ident.to_string(),
+			related_ty:      pending.ty.clone(),
+		});
+	}
+
+	let presence_field_name = pk_field
+		.clone()
+		.or_else(|| db_fields.first().map(|field| field.column_name.clone()));
+
+	let presence_field_name = match presence_field_name {
+		Some(name) => name,
+		None => {
+			return Error::new(
+				struct_ident.span(),
+				"`Query` requires at least one database field",
+			)
+			.to_compile_error()
+			.into()
+		}
+	};
+
+	let presence_field_lit =
+		syn::LitStr::new(&presence_field_name, proc_macro2::Span::call_site());
+
+	let presence_ty = pk_field_ty
+		.clone()
+		.or_else(|| db_fields.first().map(|field| field.ty.clone()));
+
+	let presence_ty = match presence_ty {
+		Some(ty) => ty,
+		None => {
+			return Error::new(
+				struct_ident.span(),
+				"could not determine a presence column type",
+			)
+			.to_compile_error()
+			.into()
+		}
+	};
+	let join_projection_push: Vec<proc_macro2::TokenStream> = db_fields
+		.iter()
+		.map(|field| {
+			let column_lit = syn::LitStr::new(
+				&field.column_name,
+				proc_macro2::Span::call_site(),
+			);
+			quote! {
+				{
+					let alias_name =
+						format!("__sqlxo_{}{}", alias, #column_lit);
+					out.push(#root::AliasedColumn::new(
+						alias.to_string(),
+						#column_lit,
+						alias_name,
+					));
+				}
+			}
+		})
+		.collect();
+	let join_field_reads: Vec<proc_macro2::TokenStream> = db_fields
+		.iter()
+		.map(|field| {
+			let field_ident = &field.field_ident;
+			let column_lit = syn::LitStr::new(
+				&field.column_name,
+				proc_macro2::Span::call_site(),
+			);
+			let ty = &field.ty;
+			quote! {
+				let __sqlxo_alias = format!("__sqlxo_{}{}", alias, #column_lit);
+				let #field_ident: #ty =
+					row.try_get(__sqlxo_alias.as_str())?;
+			}
+		})
+		.collect();
+	let join_field_assignments: Vec<proc_macro2::TokenStream> = db_fields
+		.iter()
+		.map(|field| {
+			let field_ident = &field.field_ident;
+			quote! { #field_ident: #field_ident }
+		})
+		.collect();
+	let skip_field_assignments: Vec<proc_macro2::TokenStream> = skip_fields
+		.iter()
+		.map(|field| {
+			let field_ident = &field.field_ident;
+			quote! {
+				#field_ident: ::core::default::Default::default()
+			}
+		})
+		.collect();
+	let nav_flags: Vec<Ident> = navigation_fields
+		.iter()
+		.map(|nav| {
+			let name = format!("__sqlxo_nav_loaded_{}", nav.field_ident);
+			format_ident!("{}", name)
+		})
+		.collect();
+	let collect_join_columns_match: Vec<proc_macro2::TokenStream> =
+		navigation_fields
+			.iter()
+			.enumerate()
+			.map(|(idx, nav)| {
+				let flag = &nav_flags[idx];
+				let identifier = syn::LitStr::new(
+					&nav.join_identifier,
+					proc_macro2::Span::call_site(),
+				);
+				let related_ty = &nav.related_ty;
+				quote! {
+					#identifier => {
+						if !#flag {
+							<#related_ty as #root::JoinLoadable>::project_join_columns(
+								alias.as_str(),
+								&mut cols,
+							);
+							if let Some(child_path) = child_path.clone() {
+								let mut child_paths: #root::smallvec::SmallVec<[#root::JoinPath; 1]> =
+									#root::smallvec::SmallVec::new();
+								child_paths.push(child_path);
+								let nested_cols =
+									<#related_ty as #root::JoinNavigationModel>::collect_join_columns(
+										Some(child_paths.as_slice()),
+										alias.as_str()
+									);
+								cols.extend(nested_cols);
+							}
+							#flag = true;
+						}
+					}
+				}
+			})
+			.collect();
+	let hydrate_navigation_match: Vec<proc_macro2::TokenStream> =
+		navigation_fields
+			.iter()
+			.enumerate()
+			.map(|(idx, nav)| {
+				let flag = &nav_flags[idx];
+				let identifier = syn::LitStr::new(
+					&nav.join_identifier,
+					proc_macro2::Span::call_site(),
+				);
+				let related_ty = &nav.related_ty;
+				let field_ident = &nav.field_ident;
+				quote! {
+					#identifier => {
+						if #flag {
+							continue;
+						}
+						let value =
+							<#related_ty as #root::JoinLoadable>::hydrate_from_join(row, alias.as_str())?;
+						self.#field_ident = match value {
+							Some(mut v) => {
+								if let Some(child_path) = child_path.clone() {
+									let mut child_paths: #root::smallvec::SmallVec<[#root::JoinPath; 1]> =
+										#root::smallvec::SmallVec::new();
+									child_paths.push(child_path);
+									v.hydrate_navigations(
+										Some(child_paths.as_slice()),
+										row,
+										alias.as_str(),
+									)?;
+								}
+								#root::JoinValue::Loaded(v)
+							},
+							None => #root::JoinValue::Missing,
+						};
+						#flag = true;
+					}
+				}
+			})
+			.collect();
+	let nav_flag_collect_defs = nav_flags.clone();
+	let nav_flag_hydrate_defs = nav_flags.clone();
 
 	let out = quote! {
 
@@ -902,6 +1342,92 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 			fn into_iter(self) -> Self::IntoIter {
 				::std::iter::once(self)
+			}
+		}
+
+
+		impl #root::JoinLoadable for #struct_ident {
+			fn project_join_columns(
+				alias: &str,
+				out: &mut #root::smallvec::SmallVec<[#root::AliasedColumn; 4]>,
+			) {
+				#(#join_projection_push)*
+			}
+
+			fn hydrate_from_join(
+				row: &sqlx::postgres::PgRow,
+				alias: &str,
+			) -> Result<Option<Self>, sqlx::Error> {
+				use sqlx::Row;
+
+				let pk_alias = format!("__sqlxo_{}{}", alias, #presence_field_lit);
+				let pk_present: Option<#presence_ty> =
+					row.try_get(pk_alias.as_str())?;
+				if pk_present.is_none() {
+					return Ok(None);
+				}
+
+				#(#join_field_reads)*
+
+				Ok(Some(Self {
+					#(#join_field_assignments,)*
+					#(#skip_field_assignments,)*
+				}))
+			}
+		}
+
+
+		impl #root::JoinNavigationModel for #struct_ident {
+			fn collect_join_columns(
+				joins: Option<&[#root::JoinPath]>,
+				base_alias: &str,
+			) -> #root::smallvec::SmallVec<[#root::AliasedColumn; 4]> {
+				let mut cols: #root::smallvec::SmallVec<[#root::AliasedColumn; 4]> =
+					#root::smallvec::SmallVec::new();
+				#(let mut #nav_flag_collect_defs = false;)*
+
+				if let Some(joins) = joins {
+					for path in joins {
+						if let Some(first) = path.segments().first() {
+							let child_path = path.tail();
+							let mut alias_builder = base_alias.to_string();
+							alias_builder.push_str(first.descriptor.alias_segment);
+							let alias = alias_builder.clone();
+							match first.descriptor.identifier {
+								#(#collect_join_columns_match,)*
+								_ => {}
+							}
+						}
+					}
+				}
+
+				cols
+			}
+
+			fn hydrate_navigations(
+				&mut self,
+				joins: Option<&[#root::JoinPath]>,
+				row: &sqlx::postgres::PgRow,
+				base_alias: &str,
+			) -> Result<(), sqlx::Error> {
+				#(let mut #nav_flag_hydrate_defs = false;)*
+
+				if let Some(joins) = joins {
+					for path in joins {
+						if let Some(first) = path.segments().first() {
+							let child_path = path.tail();
+							let mut alias_builder = base_alias.to_string();
+							alias_builder.push_str(first.descriptor.alias_segment);
+							let alias = alias_builder.clone();
+							match first.descriptor.identifier {
+								#(#hydrate_navigation_match,)*
+								_ => {}
+							}
+						}
+					}
+				}
+
+				Ok(())
 			}
 		}
 

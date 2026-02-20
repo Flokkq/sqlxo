@@ -1701,6 +1701,7 @@ dependencies = [
  "anyhow",
  "serde",
  "serde_json",
+ "smallvec",
  "sqlx",
  "utoipa",
 ]

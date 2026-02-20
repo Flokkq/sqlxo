@@ -1,4 +1,6 @@
+use smallvec::SmallVec;
 use sqlx::{
+	postgres::PgRow,
 	prelude::Type,
 	Postgres,
 };
@@ -28,7 +30,7 @@ pub trait SqlWrite {
 pub trait QueryContext: Send + Sync + 'static {
 	const TABLE: &'static str;
 
-	type Model: QueryModel + Send + Sync;
+	type Model: QueryModel + Send + Sync + JoinNavigationModel;
 	type Query: FilterQuery + Send + Sync;
 	type Sort: QuerySort + Send + Sync;
 	type Join: SqlJoin + Send + Sync;
@@ -53,6 +55,7 @@ pub struct JoinDescriptor {
 	pub right_table:   &'static str,
 	pub right_field:   &'static str,
 	pub alias_segment: &'static str,
+	pub identifier:    &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +100,16 @@ impl JoinPath {
 		&self.segments
 	}
 
+	pub fn tail(&self) -> Option<Self> {
+		if self.segments.len() <= 1 {
+			None
+		} else {
+			Some(Self {
+				segments: self.segments[1..].to_vec(),
+			})
+		}
+	}
+
 	pub fn is_empty(&self) -> bool {
 		self.segments.is_empty()
 	}
@@ -108,6 +121,88 @@ impl JoinPath {
 
 pub trait SqlJoin {
 	fn descriptor(&self) -> JoinDescriptor;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasedColumn {
+	pub table_alias: String,
+	pub column:      &'static str,
+	pub alias:       String,
+}
+
+impl AliasedColumn {
+	pub fn new(
+		table_alias: impl Into<String>,
+		column: &'static str,
+		alias: impl Into<String>,
+	) -> Self {
+		Self {
+			table_alias: table_alias.into(),
+			column,
+			alias: alias.into(),
+		}
+	}
+}
+
+#[derive(PartialEq, Eq)]
+pub enum JoinValue<T> {
+	NotLoaded,
+	Missing,
+	Loaded(T),
+}
+
+impl<T> Default for JoinValue<T> {
+	fn default() -> Self {
+		Self::NotLoaded
+	}
+}
+
+impl<T: Clone> Clone for JoinValue<T> {
+	fn clone(&self) -> Self {
+		match self {
+			Self::NotLoaded => Self::NotLoaded,
+			Self::Missing => Self::Missing,
+			Self::Loaded(v) => Self::Loaded(v.clone()),
+		}
+	}
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for JoinValue<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::NotLoaded => f.write_str("JoinValue::NotLoaded"),
+			Self::Missing => f.write_str("JoinValue::Missing"),
+			Self::Loaded(v) => {
+				f.debug_tuple("JoinValue::Loaded").field(v).finish()
+			}
+		}
+	}
+}
+
+pub trait JoinLoadable: Sized {
+	fn project_join_columns(
+		alias: &str,
+		out: &mut SmallVec<[AliasedColumn; 4]>,
+	);
+
+	fn hydrate_from_join(
+		row: &PgRow,
+		alias: &str,
+	) -> Result<Option<Self>, sqlx::Error>;
+}
+
+pub trait JoinNavigationModel {
+	fn collect_join_columns(
+		joins: Option<&[JoinPath]>,
+		base_alias: &str,
+	) -> SmallVec<[AliasedColumn; 4]>;
+
+	fn hydrate_navigations(
+		&mut self,
+		joins: Option<&[JoinPath]>,
+		row: &PgRow,
+		base_alias: &str,
+	) -> Result<(), sqlx::Error>;
 }
 
 pub trait Model {}

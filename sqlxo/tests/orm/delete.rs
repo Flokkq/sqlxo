@@ -82,7 +82,10 @@ fn test_hard_delete_sql_generation() {
 		.build();
 
 	let sql = plan.sql().normalize();
-	assert_eq!(sql, "DELETE FROM hard_item WHERE name = $1");
+	assert_eq!(
+		sql,
+		"DELETE FROM hard_item WHERE \"hard_item\".\"name\" = $1"
+	);
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -100,7 +103,8 @@ fn test_soft_delete_sql_generation() {
 	let sql = plan.sql().normalize();
 	assert_eq!(
 		sql,
-		"UPDATE soft_item SET deleted_at = NOW() WHERE name = $1"
+		"UPDATE soft_item SET deleted_at = NOW() WHERE \"soft_item\".\"name\" \
+		 = $1"
 	);
 }
 
@@ -121,7 +125,8 @@ fn test_read_excludes_soft_deleted() {
 	let sql = plan.sql(SelectType::Star).normalize();
 	assert_eq!(
 		sql,
-		"SELECT * FROM soft_item WHERE deleted_at IS NULL AND (name = $1)"
+		"SELECT * FROM soft_item WHERE \"soft_item\".\"deleted_at\" IS NULL \
+		 AND (\"soft_item\".\"name\" = $1)"
 	);
 }
 
@@ -140,7 +145,10 @@ fn test_read_includes_soft_deleted_when_requested() {
 		.build();
 
 	let sql = plan.sql(SelectType::Star).normalize();
-	assert_eq!(sql, "SELECT * FROM soft_item WHERE name = $1");
+	assert_eq!(
+		sql,
+		"SELECT * FROM soft_item WHERE \"soft_item\".\"name\" = $1"
+	);
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -157,7 +165,10 @@ fn test_read_hard_delete_no_filter() {
 		.build();
 
 	let sql = plan.sql(SelectType::Star).normalize();
-	assert_eq!(sql, "SELECT * FROM hard_item WHERE name = $1");
+	assert_eq!(
+		sql,
+		"SELECT * FROM hard_item WHERE \"hard_item\".\"name\" = $1"
+	);
 }
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -177,5 +188,8 @@ fn test_read_soft_delete_without_where() {
 	let plan = QueryBuilder::<SoftDeleteItem>::read().build();
 
 	let sql = plan.sql(SelectType::Star).normalize();
-	assert_eq!(sql, "SELECT * FROM soft_item WHERE deleted_at IS NULL");
+	assert_eq!(
+		sql,
+		"SELECT * FROM soft_item WHERE \"soft_item\".\"deleted_at\" IS NULL"
+	);
 }

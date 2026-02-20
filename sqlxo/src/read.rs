@@ -2,14 +2,18 @@ use smallvec::SmallVec;
 use std::marker::PhantomData;
 
 use sqlx::{
+	postgres::PgRow,
 	Executor,
+	FromRow,
 	Postgres,
 };
 use sqlxo_traits::{
+	AliasedColumn,
 	FullTextSearchConfig,
 	FullTextSearchable,
 	GetDeleteMarker,
 	JoinKind,
+	JoinNavigationModel,
 	JoinPath,
 	QueryContext,
 	SqlWrite,
@@ -195,6 +199,7 @@ fn resolve_selection_columns(
 impl<'a, C, Row> ReadQueryPlan<'a, C, Row>
 where
 	C: QueryContext,
+	C::Model: JoinNavigationModel,
 {
 	fn to_query_builder(
 		&self,
@@ -240,7 +245,7 @@ where
 	}
 
 	fn select_type_for(&self, base: SelectType) -> SelectType {
-		match base {
+		let resolved = match base {
 			SelectType::Star => self
 				.selection
 				.as_ref()
@@ -253,7 +258,30 @@ where
 				})
 				.unwrap_or(SelectType::Star),
 			other => other,
+		};
+
+		self.apply_join_extras(resolved)
+	}
+
+	fn apply_join_extras(&self, select: SelectType) -> SelectType {
+		let extras = self.join_projection_columns();
+		if extras.is_empty() {
+			return select;
 		}
+
+		match select {
+			SelectType::Star => SelectType::StarWithExtras(extras),
+			SelectType::StarAndCount => SelectType::StarAndCountExtras(extras),
+			other => other,
+		}
+	}
+
+	fn join_projection_columns(&self) -> SmallVec<[AliasedColumn; 4]> {
+		if self.selection.is_some() {
+			return SmallVec::new();
+		}
+
+		C::Model::collect_join_columns(self.joins.as_deref(), "")
 	}
 
 	fn push_where_clause(&self, w: &mut SqlWriter) {
@@ -261,8 +289,10 @@ where
 
 		if !self.include_deleted {
 			if let Some(delete_field) = self.delete_marker_field {
+				let qualified =
+					format!(r#""{}"."{}""#, self.table, delete_field);
 				w.push_where_raw(|writer| {
-					writer.push(delete_field);
+					writer.push(&qualified);
 					writer.push(" IS NULL");
 				});
 				has_clause = true;
@@ -311,9 +341,9 @@ where
 			total_count: i64,
 		}
 
-		let rows: Vec<RowWithCount<C::Model>> = self
+		let rows: Vec<PgRow> = self
 			.to_query_builder(SelectType::StarAndCount)
-			.build_query_as::<RowWithCount<C::Model>>()
+			.build()
 			.fetch_all(exec)
 			.await?;
 
@@ -323,8 +353,22 @@ where
 			return Ok(Page::new(vec![], pagination, 0));
 		}
 
-		let total = rows[0].total_count;
-		let items = rows.into_iter().map(|r| r.model).collect();
+		let mut total = 0;
+		let mut items = Vec::with_capacity(rows.len());
+		let hydrate = self.selection.is_none();
+
+		for row in rows {
+			let mut parsed = RowWithCount::<C::Model>::from_row(&row)?;
+			if hydrate {
+				parsed.model.hydrate_navigations(
+					self.joins.as_deref(),
+					&row,
+					"",
+				)?;
+			}
+			total = parsed.total_count;
+			items.push(parsed.model);
+		}
 
 		Ok(Page::new(items, pagination, total))
 	}
@@ -352,6 +396,13 @@ where
 		use sqlx::Execute;
 		self.to_query_builder(build).build().sql().to_string()
 	}
+
+	fn map_pg_row(&self, row: PgRow) -> Result<Row, sqlx::Error>
+	where
+		Row: HydrateRow<C>,
+	{
+		<Row as HydrateRow<C>>::from_pg_row(self, row)
+	}
 }
 
 #[async_trait::async_trait]
@@ -364,20 +415,26 @@ where
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder(SelectType::Star)
-			.build_query_as::<Row>()
+		let row = self
+			.to_query_builder(SelectType::Star)
+			.build()
 			.fetch_one(exec)
-			.await
+			.await?;
+
+		self.map_pg_row(row)
 	}
 
 	async fn fetch_all<'e, E>(&self, exec: E) -> Result<Vec<Row>, sqlx::Error>
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder(SelectType::Star)
-			.build_query_as::<Row>()
+		let rows = self
+			.to_query_builder(SelectType::Star)
+			.build()
 			.fetch_all(exec)
-			.await
+			.await?;
+
+		rows.into_iter().map(|row| self.map_pg_row(row)).collect()
 	}
 
 	async fn fetch_optional<'e, E>(
@@ -387,10 +444,16 @@ where
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
-		self.to_query_builder(SelectType::Star)
-			.build_query_as::<Row>()
+		let row = self
+			.to_query_builder(SelectType::Star)
+			.build()
 			.fetch_optional(exec)
-			.await
+			.await?;
+
+		match row {
+			Some(row) => self.map_pg_row(row).map(Some),
+			None => Ok(None),
+		}
 	}
 }
 
@@ -420,6 +483,43 @@ where
 	C: QueryContext,
 	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
+}
+
+trait HydrateRow<C: QueryContext>: Sized {
+	fn from_pg_row(
+		plan: &ReadQueryPlan<C, Self>,
+		row: PgRow,
+	) -> Result<Self, sqlx::Error>;
+}
+
+impl<C, Row> HydrateRow<C> for Row
+where
+	C: QueryContext,
+	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, PgRow>,
+{
+	default fn from_pg_row(
+		_plan: &ReadQueryPlan<C, Row>,
+		row: PgRow,
+	) -> Result<Self, sqlx::Error> {
+		Row::from_row(&row)
+	}
+}
+
+impl<C> HydrateRow<C> for C::Model
+where
+	C: QueryContext,
+	C::Model: JoinNavigationModel,
+{
+	fn from_pg_row(
+		plan: &ReadQueryPlan<C, Self>,
+		row: PgRow,
+	) -> Result<Self, sqlx::Error> {
+		let mut model = Self::from_row(&row)?;
+		if plan.selection.is_none() {
+			model.hydrate_navigations(plan.joins.as_deref(), &row, "")?;
+		}
+		Ok(model)
+	}
 }
 
 pub struct ReadQueryBuilder<
@@ -466,7 +566,7 @@ where
 impl<'a, C, Row> Buildable<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
-	C::Model: crate::GetDeleteMarker,
+	C::Model: crate::GetDeleteMarker + JoinNavigationModel,
 	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 	type Row = Row;
@@ -506,7 +606,7 @@ where
 impl<'a, C, Row> ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
-	C::Model: crate::GetDeleteMarker,
+	C::Model: crate::GetDeleteMarker + JoinNavigationModel,
 	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 	pub fn take<NewRow>(
@@ -537,7 +637,7 @@ where
 impl<'a, C, Row> BuildableFilter<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
-	C::Model: crate::GetDeleteMarker,
+	C::Model: crate::GetDeleteMarker + JoinNavigationModel,
 {
 	fn r#where(mut self, e: Expression<<C as QueryContext>::Query>) -> Self {
 		match self.where_expr {
@@ -552,7 +652,7 @@ where
 impl<'a, C, Row> BuildableJoin<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
-	C::Model: crate::GetDeleteMarker,
+	C::Model: crate::GetDeleteMarker + JoinNavigationModel,
 {
 	fn join(self, join: <C as QueryContext>::Join, kind: JoinKind) -> Self {
 		self.join_path(JoinPath::from_join(join, kind))
@@ -579,7 +679,7 @@ where
 impl<'a, C, Row> BuildableSort<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
-	C::Model: crate::GetDeleteMarker,
+	C::Model: crate::GetDeleteMarker + JoinNavigationModel,
 {
 	fn order_by(mut self, s: SortOrder<<C as QueryContext>::Sort>) -> Self {
 		match self.sort_expr {
@@ -594,7 +694,7 @@ where
 impl<'a, C, Row> BuildablePage<C> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
-	C::Model: crate::GetDeleteMarker,
+	C::Model: crate::GetDeleteMarker + JoinNavigationModel,
 {
 	fn paginate(mut self, p: Pagination) -> Self {
 		self.pagination = Some(p);
@@ -605,7 +705,7 @@ where
 impl<'a, C, Row> BuildableReadQuery<C, Row> for ReadQueryBuilder<'a, C, Row>
 where
 	C: QueryContext,
-	C::Model: crate::GetDeleteMarker,
+	C::Model: crate::GetDeleteMarker + JoinNavigationModel,
 	Row: Send + Sync + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
 }
