@@ -136,37 +136,17 @@ impl SqlWriter {
 	}
 
 	pub fn push_where<F: Filterable>(&mut self, expr: &Expression<F>) {
-		if self.has_where {
-			return;
-		}
-
-		self.qb.push(" WHERE ");
-		self.has_where = true;
-		expr.write(self);
+		self.push_where_raw(|writer| expr.write(writer));
 	}
 
-	pub fn push_soft_delete_filter<F: Filterable>(
-		&mut self,
-		delete_field: &str,
-		existing_expr: Option<&Expression<F>>,
-	) {
+	pub fn push_where_raw(&mut self, mut build: impl FnMut(&mut SqlWriter)) {
 		if self.has_where {
-			return;
+			self.qb.push(" AND ");
+		} else {
+			self.qb.push(" WHERE ");
+			self.has_where = true;
 		}
-
-		self.qb.push(" WHERE ");
-		self.has_where = true;
-
-		// Add soft delete filter
-		self.qb.push(delete_field);
-		self.qb.push(" IS NULL");
-
-		// If there's an existing expression, AND it
-		if let Some(expr) = existing_expr {
-			self.qb.push(" AND (");
-			expr.write(self);
-			self.qb.push(")");
-		}
+		build(self);
 	}
 
 	pub fn push_sort<S: Sortable>(&mut self, sort: &SortOrder<S>) {
@@ -177,6 +157,15 @@ impl SqlWriter {
 		self.qb.push(" ORDER BY ");
 		self.has_sort = true;
 		self.qb.push(sort.to_sql());
+	}
+
+	pub fn push_order_by_raw(&mut self, mut build: impl FnMut(&mut SqlWriter)) {
+		if self.has_sort {
+			return;
+		}
+		self.qb.push(" ORDER BY ");
+		self.has_sort = true;
+		build(self);
 	}
 
 	pub fn push_pagination(&mut self, p: &Pagination) {

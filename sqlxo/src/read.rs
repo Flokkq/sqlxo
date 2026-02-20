@@ -6,6 +6,8 @@ use sqlx::{
 	Postgres,
 };
 use sqlxo_traits::{
+	FullTextSearchConfig,
+	FullTextSearchable,
 	GetDeleteMarker,
 	JoinKind,
 	JoinPath,
@@ -54,6 +56,56 @@ where
 {
 }
 
+pub(crate) trait DynFullTextSearchPlan: Send + Sync {
+	fn write_condition(&self, w: &mut SqlWriter, base_alias: &str);
+
+	fn write_rank_expr(&self, w: &mut SqlWriter, base_alias: &str);
+
+	fn include_rank(&self) -> bool;
+}
+
+struct ModelFullTextSearchPlan<M>
+where
+	M: FullTextSearchable,
+{
+	config:  M::FullTextSearchConfig,
+	_marker: PhantomData<M>,
+}
+
+impl<M> ModelFullTextSearchPlan<M>
+where
+	M: FullTextSearchable,
+{
+	fn new(config: M::FullTextSearchConfig) -> Self {
+		Self {
+			config,
+			_marker: PhantomData,
+		}
+	}
+}
+
+impl<M> DynFullTextSearchPlan for ModelFullTextSearchPlan<M>
+where
+	M: FullTextSearchable + Send + Sync + 'static,
+	M::FullTextSearchConfig: Send + Sync,
+{
+	fn write_condition(&self, w: &mut SqlWriter, base_alias: &str) {
+		w.push("(");
+		M::write_tsvector(w, base_alias, &self.config);
+		w.push(") @@ (");
+		M::write_tsquery(w, &self.config);
+		w.push(")");
+	}
+
+	fn write_rank_expr(&self, w: &mut SqlWriter, base_alias: &str) {
+		M::write_rank(w, base_alias, &self.config);
+	}
+
+	fn include_rank(&self) -> bool {
+		self.config.include_rank()
+	}
+}
+
 pub struct ReadQueryPlan<'a, C: QueryContext, Row = <C as QueryContext>::Model>
 {
 	pub(crate) joins: Option<Vec<JoinPath>>,
@@ -64,6 +116,7 @@ pub struct ReadQueryPlan<'a, C: QueryContext, Row = <C as QueryContext>::Model>
 	pub(crate) include_deleted: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
 	pub(crate) selection: Option<SelectionList<Row>>,
+	pub(crate) full_text_search: Option<Box<dyn DynFullTextSearchPlan>>,
 	row: PhantomData<Row>,
 }
 
@@ -147,10 +200,8 @@ where
 		&self,
 		select_type: SelectType,
 	) -> sqlx::QueryBuilder<'static, Postgres> {
-		let head = ReadHead::new(
-			self.table,
-			self.select_type_for(select_type.clone()),
-		);
+		let effective_select = self.select_type_for(select_type.clone());
+		let head = ReadHead::new(self.table, effective_select);
 		let mut w = SqlWriter::new(head);
 
 		if let Some(js) = &self.joins {
@@ -161,6 +212,15 @@ where
 
 		if let Some(s) = &self.sort_expr {
 			w.push_sort(s);
+		} else if !matches!(select_type, SelectType::Exists) {
+			if let Some(fts) = &self.full_text_search {
+				if fts.include_rank() {
+					w.push_order_by_raw(|writer| {
+						fts.write_rank_expr(writer, self.table);
+						writer.push(" DESC");
+					});
+				}
+			}
 		}
 
 		if let SelectType::Exists = select_type {
@@ -197,21 +257,44 @@ where
 	}
 
 	fn push_where_clause(&self, w: &mut SqlWriter) {
-		if self.include_deleted {
-			if let Some(e) = &self.where_expr {
-				w.push_where(e);
+		let mut has_clause = false;
+
+		if !self.include_deleted {
+			if let Some(delete_field) = self.delete_marker_field {
+				w.push_where_raw(|writer| {
+					writer.push(delete_field);
+					writer.push(" IS NULL");
+				});
+				has_clause = true;
 			}
-			return;
 		}
 
-		let Some(delete_field) = self.delete_marker_field else {
-			if let Some(e) = &self.where_expr {
-				w.push_where(e);
-			}
-			return;
-		};
+		if let Some(e) = &self.where_expr {
+			let wrap = has_clause;
+			w.push_where_raw(|writer| {
+				if wrap {
+					writer.push("(");
+					e.write(writer);
+					writer.push(")");
+				} else {
+					e.write(writer);
+				}
+			});
+			has_clause = true;
+		}
 
-		w.push_soft_delete_filter(delete_field, self.where_expr.as_ref());
+		if let Some(fts) = &self.full_text_search {
+			let wrap = has_clause;
+			w.push_where_raw(|writer| {
+				if wrap {
+					writer.push("(");
+				}
+				fts.write_condition(writer, self.table);
+				if wrap {
+					writer.push(")");
+				}
+			});
+		}
 	}
 
 	pub async fn fetch_page<'e, E>(
@@ -352,6 +435,7 @@ pub struct ReadQueryBuilder<
 	pub(crate) include_deleted: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
 	pub(crate) selection: Option<SelectionList<Row>>,
+	pub(crate) full_text_search: Option<Box<dyn DynFullTextSearchPlan>>,
 	row: PhantomData<Row>,
 }
 
@@ -361,6 +445,20 @@ where
 {
 	pub fn include_deleted(mut self) -> Self {
 		self.include_deleted = true;
+		self
+	}
+
+	pub fn search(
+		mut self,
+		config: <C::Model as FullTextSearchable>::FullTextSearchConfig,
+	) -> Self
+	where
+		C::Model: FullTextSearchable + 'static,
+		<C::Model as FullTextSearchable>::FullTextSearchConfig:
+			Send + Sync + 'static,
+	{
+		self.full_text_search =
+			Some(Box::new(ModelFullTextSearchPlan::<C::Model>::new(config)));
 		self
 	}
 }
@@ -384,6 +482,7 @@ where
 			include_deleted:     false,
 			delete_marker_field: C::Model::delete_marker_field(),
 			selection:           None,
+			full_text_search:    None,
 			row:                 PhantomData,
 		}
 	}
@@ -398,6 +497,7 @@ where
 			include_deleted:     self.include_deleted,
 			delete_marker_field: self.delete_marker_field,
 			selection:           self.selection,
+			full_text_search:    self.full_text_search,
 			row:                 PhantomData,
 		}
 	}
@@ -428,6 +528,7 @@ where
 			include_deleted:     self.include_deleted,
 			delete_marker_field: self.delete_marker_field,
 			selection:           Some(selection),
+			full_text_search:    self.full_text_search,
 			row:                 PhantomData,
 		}
 	}

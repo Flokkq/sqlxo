@@ -162,3 +162,59 @@ pub trait CreateModel: Clone + Send + Sync {
 		insert_marker_field: Option<&'static str>,
 	);
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchWeight {
+	#[default]
+	A,
+	B,
+	C,
+	D,
+}
+
+impl SearchWeight {
+	pub fn to_char(self) -> char {
+		match self {
+			Self::A => 'A',
+			Self::B => 'B',
+			Self::C => 'C',
+			Self::D => 'D',
+		}
+	}
+
+	pub fn sql_literal(self) -> &'static str {
+		match self {
+			Self::A => "'A'",
+			Self::B => "'B'",
+			Self::C => "'C'",
+			Self::D => "'D'",
+		}
+	}
+}
+
+pub trait FullTextSearchConfig {
+	fn include_rank(&self) -> bool;
+}
+
+pub trait FullTextSearchable: Sized {
+	type FullTextSearchField: Copy + Eq;
+	type FullTextSearchConfig: FullTextSearchConfig + Send + Sync;
+
+	fn write_tsvector<W>(
+		w: &mut W,
+		base_alias: &str,
+		config: &Self::FullTextSearchConfig,
+	) where
+		W: SqlWrite;
+
+	fn write_tsquery<W>(w: &mut W, config: &Self::FullTextSearchConfig)
+	where
+		W: SqlWrite;
+
+	fn write_rank<W>(
+		w: &mut W,
+		base_alias: &str,
+		config: &Self::FullTextSearchConfig,
+	) where
+		W: SqlWrite;
+}

@@ -19,6 +19,7 @@ use sqlxo::blocks::BuildableSort;
 use sqlxo::blocks::Expression;
 use sqlxo::blocks::Page;
 use sqlxo::blocks::Pagination;
+use sqlxo::blocks::SelectType;
 use sqlxo::or;
 use sqlxo::order_by;
 use sqlxo::Buildable;
@@ -31,6 +32,7 @@ use uuid::Uuid;
 use crate::helpers::{
 	Item,
 	ItemColumn,
+	ItemFullTextSearchConfig,
 	ItemJoin,
 	ItemQuery,
 	ItemSort,
@@ -190,6 +192,81 @@ async fn query_exists() {
 		.unwrap();
 
 	assert!(exists);
+}
+
+#[tokio::test]
+async fn full_text_search_filters_results() {
+	let pool = get_connection_pool().await;
+
+	let mut name_match = Item::default();
+	name_match.name = "premium bolt kit".into();
+	name_match.description = "complete stainless kit".into();
+	name_match.price = 25.0;
+	insert_item(&name_match, &pool).await.unwrap();
+
+	let mut description_match = Item::default();
+	description_match.name = "hardware bundle".into();
+	description_match.description = "includes spare bolt and screw".into();
+	description_match.price = 75.0;
+	insert_item(&description_match, &pool).await.unwrap();
+
+	let mut unrelated = Item::default();
+	unrelated.name = "rubber mallet".into();
+	unrelated.description = "general purpose hammer".into();
+	insert_item(&unrelated, &pool).await.unwrap();
+
+	let results: Vec<Item> = QueryBuilder::<Item>::read()
+		.search(ItemFullTextSearchConfig::new("bolt"))
+		.build()
+		.fetch_all(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(results.len(), 2);
+	assert_eq!(results[0].id, name_match.id);
+	assert!(results.iter().any(|row| row.id == description_match.id));
+	assert!(results.iter().all(|row| row.id != unrelated.id));
+}
+
+#[test]
+fn full_text_search_orders_by_rank_by_default() {
+	let sql = QueryBuilder::<Item>::read()
+		.search(ItemFullTextSearchConfig::new("bolt"))
+		.build()
+		.sql(SelectType::Star);
+
+	assert!(
+		sql.contains("ORDER BY ts_rank("),
+		"expected SQL to order by rank, got: {sql}"
+	);
+}
+
+#[test]
+fn full_text_search_without_rank_drops_auto_ordering() {
+	let sql = QueryBuilder::<Item>::read()
+		.search(ItemFullTextSearchConfig::new("bolt").without_rank())
+		.build()
+		.sql(SelectType::Star);
+
+	assert!(
+		!sql.contains("ts_rank("),
+		"expected no rank ordering, got SQL: {sql}"
+	);
+}
+
+#[test]
+fn full_text_search_respects_manual_ordering() {
+	let sql = QueryBuilder::<Item>::read()
+		.search(ItemFullTextSearchConfig::new("bolt"))
+		.order_by(order_by![ItemSort::ByPriceAsc])
+		.build()
+		.sql(SelectType::Star);
+
+	assert!(sql.contains("ORDER BY price ASC"), "unexpected SQL: {sql}");
+	assert!(
+		!sql.contains("ts_rank("),
+		"manual order should suppress rank ordering: {sql}"
+	);
 }
 
 async fn insert_hard_delete_item(
@@ -890,17 +967,17 @@ async fn read_item_with_joined_take_returns_tuple() {
 	item.material_id = Some(material_id);
 	insert_item(&item, &pool).await.unwrap();
 
-		let (item_id, joined_material_id): (Uuid, Uuid) =
-			QueryBuilder::<Item>::read()
-				.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Inner)
-				.take(sqlxo::take!(Item::ItemId, Material::MaterialId))
-				.r#where(Expression::Leaf(ItemQuery::MaterialIdEq(
-					Some(material_id),
-				)))
-				.build()
-				.fetch_one(&pool)
-				.await
-				.unwrap();
+	let (item_id, joined_material_id): (Uuid, Uuid) =
+		QueryBuilder::<Item>::read()
+			.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Inner)
+			.take(sqlxo::take!(Item::ItemId, Material::MaterialId))
+			.r#where(Expression::Leaf(ItemQuery::MaterialIdEq(Some(
+				material_id,
+			))))
+			.build()
+			.fetch_one(&pool)
+			.await
+			.unwrap();
 
 	assert_eq!(item_id, item.id);
 	assert_eq!(joined_material_id, material_id);

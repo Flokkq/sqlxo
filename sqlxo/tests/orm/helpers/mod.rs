@@ -12,6 +12,7 @@ use sqlxo::{
 };
 use sqlxo_macros::{
 	Create,
+	FullTextSearchable,
 	Update,
 };
 use uuid::Uuid;
@@ -33,11 +34,13 @@ impl NormalizeString for &str {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+#[derive(Debug, FromRow, Clone, Query, FullTextSearchable, PartialEq)]
 pub struct Item {
 	#[primary_key]
 	pub id:          Uuid,
+	#[sqlxo(fts(weight = "A"))]
 	pub name:        String,
+	#[sqlxo(fts(weight = "B"))]
 	pub description: String,
 	pub price:       f32,
 	pub amount:      i32,
@@ -77,7 +80,7 @@ pub struct ItemDto {
 	pub due_date:       sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
 
 	#[sqlxo(webquery_ignore)]
-	pub ignore:         Vec<i32>,
+	pub ignore: Vec<i32>,
 }
 
 #[allow(dead_code)]

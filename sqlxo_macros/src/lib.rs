@@ -2,6 +2,7 @@
 
 use heck::{
 	ToPascalCase,
+	ToShoutySnakeCase,
 	ToSnakeCase,
 };
 use proc_macro::{
@@ -129,6 +130,31 @@ fn classify_type(ty: &syn::Type) -> Kind {
 	}
 
 	Kind::UuidOrScalarEq
+}
+
+fn is_option_type(ty: &syn::Type) -> bool {
+	if let syn::Type::Path(type_path) = ty {
+		if let Some(last) = type_path.path.segments.last() {
+			return last.ident == "Option";
+		}
+	}
+
+	false
+}
+
+fn validate_language(value: &str, span: proc_macro2::Span) -> syn::Result<()> {
+	let valid = !value.is_empty() &&
+		value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+
+	if valid {
+		Ok(())
+	} else {
+		Err(syn::Error::new(
+			span,
+			"fts language must contain only ASCII letters, numbers, or \
+			 underscores",
+		))
+	}
 }
 
 fn extract_table_name(input: &DeriveInput) -> syn::Result<Option<String>> {
@@ -1993,6 +2019,535 @@ pub fn derive_update(input: TokenStream) -> TokenStream {
 				)*
 
 				set_fields
+			}
+		}
+	};
+
+	out.into()
+}
+
+#[derive(Clone)]
+struct FullTextSearchAttr {
+	ignore:   bool,
+	weight:   Option<WeightVariant>,
+	language: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+enum WeightVariant {
+	A,
+	B,
+	C,
+	D,
+}
+
+impl WeightVariant {
+	fn ident(&self) -> syn::Ident {
+		match self {
+			Self::A => format_ident!("A"),
+			Self::B => format_ident!("B"),
+			Self::C => format_ident!("C"),
+			Self::D => format_ident!("D"),
+		}
+	}
+}
+
+fn parse_weight_variant(
+	value: &str,
+	span: proc_macro2::Span,
+) -> syn::Result<WeightVariant> {
+	match value {
+		"A" | "a" => Ok(WeightVariant::A),
+		"B" | "b" => Ok(WeightVariant::B),
+		"C" | "c" => Ok(WeightVariant::C),
+		"D" | "d" => Ok(WeightVariant::D),
+		_ => Err(syn::Error::new(
+			span,
+			r#"fts weight must be one of "A", "B", "C", or "D""#,
+		)),
+	}
+}
+
+fn extract_fts_attr(
+	field: &syn::Field,
+) -> syn::Result<Option<FullTextSearchAttr>> {
+	let mut parsed: Option<FullTextSearchAttr> = None;
+
+	for attr in &field.attrs {
+		if !attr.path.is_ident("sqlxo") {
+			continue;
+		}
+
+		let meta = match attr.parse_meta() {
+			Ok(m) => m,
+			Err(_) => {
+				return Err(syn::Error::new_spanned(
+					attr,
+					"invalid #[sqlxo] attribute",
+				));
+			}
+		};
+
+		let list = match meta {
+			Meta::List(list) => list,
+			_ => continue,
+		};
+
+		for nested in list.nested.iter() {
+			if let NestedMeta::Meta(Meta::List(inner)) = nested {
+				if inner.path.is_ident("fts") {
+					if parsed.is_some() {
+						return Err(syn::Error::new(
+							inner.span(),
+							"duplicate #[sqlxo(fts(...))] attribute",
+						));
+					}
+					parsed = Some(parse_fts_options(inner)?);
+				}
+			}
+		}
+	}
+
+	Ok(parsed)
+}
+
+fn parse_fts_options(list: &syn::MetaList) -> syn::Result<FullTextSearchAttr> {
+	let mut attr = FullTextSearchAttr {
+		ignore:   false,
+		weight:   None,
+		language: None,
+	};
+
+	for nested in list.nested.iter() {
+		match nested {
+			NestedMeta::Meta(Meta::Path(path)) if path.is_ident("ignore") => {
+				attr.ignore = true;
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("weight") =>
+			{
+				if attr.weight.is_some() {
+					return Err(syn::Error::new(
+						nv.span(),
+						"duplicate fts weight option",
+					));
+				}
+				let value = match &nv.lit {
+					Lit::Str(s) => s.value(),
+					other => {
+						return Err(syn::Error::new(
+							other.span(),
+							"fts weight must be a string literal",
+						));
+					}
+				};
+
+				attr.weight = Some(parse_weight_variant(&value, nv.span())?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("language") =>
+			{
+				if attr.language.is_some() {
+					return Err(syn::Error::new(
+						nv.span(),
+						"duplicate fts language option",
+					));
+				}
+				let value = match &nv.lit {
+					Lit::Str(s) => s.value(),
+					other => {
+						return Err(syn::Error::new(
+							other.span(),
+							"fts language must be a string literal",
+						));
+					}
+				};
+
+				validate_language(&value, nv.span())?;
+				attr.language = Some(value);
+			}
+			other => {
+				return Err(syn::Error::new(
+					other.span(),
+					"unknown #[sqlxo(fts(...))] option",
+				));
+			}
+		}
+	}
+
+	if attr.ignore && (attr.weight.is_some() || attr.language.is_some()) {
+		return Err(syn::Error::new(
+			list.span(),
+			"`ignore` cannot be combined with other #[sqlxo(fts(...))] options",
+		));
+	}
+
+	Ok(attr)
+}
+
+#[proc_macro_derive(FullTextSearchable, attributes(sqlxo))]
+pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let root = sqlxo_root();
+
+	if !matches!(input.vis, Visibility::Public(_)) {
+		return Error::new_spanned(
+			&input.ident,
+			"`FullTextSearchable` requires a `pub` struct",
+		)
+		.to_compile_error()
+		.into();
+	}
+
+	let struct_ident = &input.ident;
+
+	let data = match &input.data {
+		Data::Struct(s) => s,
+		_ => {
+			return Error::new_spanned(
+				&input.ident,
+				"`FullTextSearchable` supports only structs",
+			)
+			.to_compile_error()
+			.into();
+		}
+	};
+
+	let fields = match &data.fields {
+		Fields::Named(named) => &named.named,
+		other => {
+			return Error::new_spanned(
+				other,
+				"`FullTextSearchable` requires named fields",
+			)
+			.to_compile_error()
+			.into();
+		}
+	};
+
+	struct FieldInfo {
+		variant:          syn::Ident,
+		column:           syn::LitStr,
+		default_weight:   proc_macro2::TokenStream,
+		default_language: syn::LitStr,
+		is_option:        bool,
+	}
+
+	let mut fields_info: Vec<FieldInfo> = Vec::new();
+	let mut shared_language: Option<String> = None;
+
+	for field in fields.iter() {
+		let fts_attr = match extract_fts_attr(field) {
+			Ok(attr) => attr,
+			Err(e) => return e.to_compile_error().into(),
+		};
+
+		if fts_attr.as_ref().map_or(false, |attr| attr.ignore) {
+			continue;
+		}
+
+		if !matches!(classify_type(&field.ty), Kind::String) {
+			if fts_attr.is_some() {
+				return Error::new(
+					field.span(),
+					"`FullTextSearchable` only supports `String` or \
+					 `Option<String>` fields",
+				)
+				.to_compile_error()
+				.into();
+			}
+
+			continue;
+		}
+
+		let field_ident = field.ident.as_ref().expect("named field");
+		let field_name_pascal = field_ident.to_string().to_pascal_case();
+		let field_name_snake = field_ident.to_string().to_snake_case();
+
+		let weight_variant = fts_attr
+			.as_ref()
+			.and_then(|attr| attr.weight)
+			.unwrap_or(WeightVariant::A);
+		let weight_ident = weight_variant.ident();
+
+		let field_language = fts_attr
+			.as_ref()
+			.and_then(|attr| attr.language.clone())
+			.or_else(|| shared_language.clone())
+			.unwrap_or_else(|| "english".to_string());
+
+		if let Some(current) = &shared_language {
+			if current != &field_language {
+				return Error::new(
+					field.span(),
+					"all searchable fields must use the same \
+					 #[sqlxo(fts(language = \"...\"))] value",
+				)
+				.to_compile_error()
+				.into();
+			}
+		} else {
+			shared_language = Some(field_language.clone());
+		}
+
+		fields_info.push(FieldInfo {
+			variant:          format_ident!("{}", field_name_pascal),
+			column:           syn::LitStr::new(
+				&field_name_snake,
+				proc_macro2::Span::call_site(),
+			),
+			default_weight:   quote! { #root::SearchWeight::#weight_ident },
+			default_language: syn::LitStr::new(
+				&field_language,
+				proc_macro2::Span::call_site(),
+			),
+			is_option:        is_option_type(&field.ty),
+		});
+	}
+
+	if fields_info.is_empty() {
+		return Error::new(
+			struct_ident.span(),
+			"`FullTextSearchable` requires at least one searchable string \
+			 field",
+		)
+		.to_compile_error()
+		.into();
+	}
+
+	let base_language =
+		shared_language.unwrap_or_else(|| "english".to_string());
+	let language_lit =
+		syn::LitStr::new(&base_language, proc_macro2::Span::call_site());
+
+	let const_ident = format_ident!(
+		"{}_FULL_TEXT_SEARCH_LANGUAGE",
+		struct_ident.to_string().to_shouty_snake_case()
+	);
+	let fts_enum_ident = format_ident!("{}FullTextSearchField", struct_ident);
+	let config_ident = format_ident!("{}FullTextSearchConfig", struct_ident);
+
+	let column_name_arms = fields_info.iter().map(|info| {
+		let variant = &info.variant;
+		let column = &info.column;
+		quote! { Self::#variant => #column }
+	});
+
+	let default_weight_arms = fields_info.iter().map(|info| {
+		let variant = &info.variant;
+		let default_weight = &info.default_weight;
+		quote! { Self::#variant => #default_weight }
+	});
+
+	let default_language_arms = fields_info.iter().map(|info| {
+		let variant = &info.variant;
+		let default_language = &info.default_language;
+		quote! { Self::#variant => #default_language }
+	});
+
+	let enum_variants = fields_info.iter().map(|info| &info.variant);
+
+	let write_segments = fields_info.iter().map(|info| {
+		let variant = &info.variant;
+		let column = &info.column;
+		let is_option = info.is_option;
+		quote! {
+			if !config.is_ignored(#fts_enum_ident::#variant) {
+				if wrote_segment {
+					w.push(" || ");
+				}
+				wrote_segment = true;
+				w.push("setweight(to_tsvector('");
+				w.push(config.language());
+				w.push("', ");
+
+				if #is_option {
+					w.push("COALESCE(\"");
+					w.push(base_alias);
+					w.push("\".\"");
+					w.push(#column);
+					w.push("\", '')");
+				} else {
+					w.push("\"");
+					w.push(base_alias);
+					w.push("\".\"");
+					w.push(#column);
+					w.push("\"");
+				}
+
+				w.push("), ");
+				w.push(
+					config
+						.weight_for(#fts_enum_ident::#variant)
+						.sql_literal(),
+				);
+				w.push(")");
+			}
+		}
+	});
+
+	let out = quote! {
+		const #const_ident: &str = #language_lit;
+
+		#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+		pub enum #fts_enum_ident {
+			#(#enum_variants),*
+		}
+
+		impl #fts_enum_ident {
+			pub fn column_name(&self) -> &'static str {
+				match self {
+					#(#column_name_arms),*
+				}
+			}
+
+			pub fn default_weight(&self) -> #root::SearchWeight {
+				match self {
+					#(#default_weight_arms),*
+				}
+			}
+
+			pub fn default_language(&self) -> &'static str {
+				match self {
+					#(#default_language_arms),*
+				}
+			}
+		}
+
+		#[derive(Debug, Clone)]
+		pub struct #config_ident {
+			query:            String,
+			language:         String,
+			weight_overrides: Vec<(#fts_enum_ident, #root::SearchWeight)>,
+			ignored_fields:   Vec<#fts_enum_ident>,
+			include_rank:     bool,
+		}
+
+		impl #config_ident {
+			pub fn new(query: impl Into<String>) -> Self {
+				Self {
+					query:            query.into(),
+					language:         #const_ident.to_string(),
+					weight_overrides: Vec::new(),
+					ignored_fields:   Vec::new(),
+					include_rank:     true,
+				}
+			}
+
+			pub fn weight(
+				mut self,
+				field: #fts_enum_ident,
+				weight: #root::SearchWeight,
+			) -> Self {
+				self.weight_overrides.push((field, weight));
+				self
+			}
+
+			pub fn ignore(mut self, field: #fts_enum_ident) -> Self {
+				self.ignored_fields.push(field);
+				self
+			}
+
+			pub fn with_language(
+				mut self,
+				language: impl Into<String>,
+			) -> Self {
+				let language = language.into();
+				Self::assert_valid_language(&language);
+				self.language = language;
+				self
+			}
+
+			pub fn language(&self) -> &str {
+				&self.language
+			}
+
+			pub fn without_rank(mut self) -> Self {
+				self.include_rank = false;
+				self
+			}
+
+			pub fn include_rank(&self) -> bool {
+				self.include_rank
+			}
+
+			fn assert_valid_language(language: &str) {
+				assert!(
+					!language.is_empty() &&
+						language
+							.chars()
+							.all(|c| c.is_ascii_alphanumeric() || c == '_'),
+					"fts language must contain only ASCII letters, numbers, \
+					 or underscores"
+				);
+			}
+
+			fn is_ignored(&self, field: #fts_enum_ident) -> bool {
+				self.ignored_fields.iter().any(|f| *f == field)
+			}
+
+			fn weight_for(
+				&self,
+				field: #fts_enum_ident,
+			) -> #root::SearchWeight {
+				self.weight_overrides
+					.iter()
+					.find(|(f, _)| *f == field)
+					.map(|(_, w)| *w)
+					.unwrap_or_else(|| field.default_weight())
+			}
+		}
+
+		impl #root::FullTextSearchConfig for #config_ident {
+			fn include_rank(&self) -> bool {
+				self.include_rank
+			}
+		}
+
+		impl #root::FullTextSearchable for #struct_ident {
+			type FullTextSearchField = #fts_enum_ident;
+			type FullTextSearchConfig = #config_ident;
+
+			fn write_tsvector<W>(
+				w: &mut W,
+				base_alias: &str,
+				config: &Self::FullTextSearchConfig,
+			) where
+				W: #root::SqlWrite,
+			{
+				let mut wrote_segment = false;
+				#(#write_segments)*
+
+				if !wrote_segment {
+					w.push("to_tsvector('");
+					w.push(config.language());
+					w.push("', '')");
+				}
+			}
+
+			fn write_tsquery<W>(w: &mut W, config: &Self::FullTextSearchConfig)
+			where
+				W: #root::SqlWrite,
+			{
+				w.push("websearch_to_tsquery('");
+				w.push(config.language());
+				w.push("', ");
+				w.bind(config.query.clone());
+				w.push(")");
+			}
+
+			fn write_rank<W>(
+				w: &mut W,
+				base_alias: &str,
+				config: &Self::FullTextSearchConfig,
+			) where
+				W: #root::SqlWrite,
+			{
+				w.push("ts_rank(");
+				Self::write_tsvector(w, base_alias, config);
+				w.push(", ");
+				Self::write_tsquery(w, config);
+				w.push(")");
 			}
 		}
 	};
