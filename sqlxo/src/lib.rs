@@ -22,6 +22,7 @@ pub mod prelude {
 }
 
 pub mod blocks;
+pub mod fts;
 pub mod select;
 pub mod web;
 

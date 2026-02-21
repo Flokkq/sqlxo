@@ -76,10 +76,10 @@ impl<'a> Display for ReadHead<'a> {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match &self.r#type {
 			SelectType::Star => {
-				write!(f, "SELECT * FROM {}", self.table)
+				write!(f, r#"SELECT "{}".* FROM {}"#, self.table, self.table)
 			}
 			SelectType::StarWithExtras(cols) => {
-				write!(f, "SELECT *")?;
+				write!(f, r#"SELECT "{}".*"#, self.table)?;
 				write_extras(cols, f)?;
 				write!(f, " FROM {}", self.table)
 			}
@@ -89,12 +89,16 @@ impl<'a> Display for ReadHead<'a> {
 			SelectType::StarAndCount => {
 				write!(
 					f,
-					"SELECT *, COUNT(*) OVER() AS total_count FROM {}",
-					self.table
+					r#"SELECT "{}".*, COUNT(*) OVER() AS total_count FROM {}"#,
+					self.table, self.table
 				)
 			}
 			SelectType::StarAndCountExtras(cols) => {
-				write!(f, "SELECT *, COUNT(*) OVER() AS total_count",)?;
+				write!(
+					f,
+					r#"SELECT "{}".*, COUNT(*) OVER() AS total_count"#,
+					self.table
+				)?;
 				write_extras(cols, f)?;
 				write!(f, " FROM {}", self.table)
 			}

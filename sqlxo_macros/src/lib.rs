@@ -553,9 +553,9 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		syn::LitStr::new(&table_name, proc_macro2::Span::call_site());
 
 	let struct_ident = &input.ident;
+	let join_ident = format_ident!("{}Join", struct_ident);
 	let query_ident = format_ident!("{}Query", struct_ident);
 	let sort_ident = format_ident!("{}Sort", struct_ident);
-	let join_ident = format_ident!("{}Join", struct_ident);
 	let column_mod_ident = format_ident!("{}Column", struct_ident);
 
 	let data = match &input.data {
@@ -1520,6 +1520,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 	}
 
 	let struct_ident = &input.ident;
+	let _join_ident = format_ident!("{}Join", struct_ident);
 
 	let data = match &input.data {
 		Data::Struct(s) => s,
@@ -2337,6 +2338,7 @@ pub fn derive_soft_delete(input: TokenStream) -> TokenStream {
 	let root = sqlxo_root();
 
 	let struct_ident = &input.ident;
+	let _join_ident = format_ident!("{}Join", struct_ident);
 
 	let data = match &input.data {
 		Data::Struct(s) => s,
@@ -2726,6 +2728,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 	}
 
 	let struct_ident = &input.ident;
+	let join_ident = format_ident!("{}Join", struct_ident);
 
 	let data = match &input.data {
 		Data::Struct(s) => s,
@@ -2759,7 +2762,18 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		is_option:        bool,
 	}
 
+	struct JoinInfo {
+		config_variant: syn::Ident,
+		join_variant:   syn::Ident,
+		nested_variant: syn::Ident,
+		related_ty:     syn::Type,
+		label:          syn::LitStr,
+		nested_label:   syn::LitStr,
+	}
+
 	let mut fields_info: Vec<FieldInfo> = Vec::new();
+	let mut join_infos: Vec<JoinInfo> = Vec::new();
+	let mut fk_specs: Vec<FkSpec> = Vec::new();
 	let mut shared_language: Option<String> = None;
 
 	for field in fields.iter() {
@@ -2767,6 +2781,205 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			Ok(attr) => attr,
 			Err(e) => return e.to_compile_error().into(),
 		};
+		let navigation_attr = match extract_navigation_attr(field) {
+			Ok(attr) => attr,
+			Err(e) => return e.to_compile_error().into(),
+		};
+
+		let field_ident = field.ident.as_ref().expect("named field");
+		let field_name_pascal = field_ident.to_string().to_pascal_case();
+		let field_name_snake = field_ident.to_string().to_snake_case();
+
+		for attr in &field.attrs {
+			if attr.path.is_ident("foreign_key") {
+				let meta = attr
+					.parse_meta()
+					.map_err(|_| {
+						Error::new_spanned(attr, "invalid #[foreign_key]")
+					})
+					.unwrap();
+
+				let list = match meta {
+					Meta::List(list) => list,
+					_ => {
+						return Error::new_spanned(
+							attr,
+							r#"expected #[foreign_key(to = "table.pk")]"#,
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+
+				let mut to_value: Option<String> = None;
+				let mut cascade_type: Option<CascadeType> = None;
+
+				for nested in list.nested {
+					match nested {
+						NestedMeta::Meta(Meta::NameValue(nv))
+							if nv.path.is_ident("to") =>
+						{
+							match nv.lit {
+								Lit::Str(ref s) => {
+									if to_value.is_some() {
+										return Error::new_spanned(
+											nv,
+											"duplicate key `to`",
+										)
+										.to_compile_error()
+										.into();
+									}
+									to_value = Some(s.value());
+								}
+								other => {
+									return Error::new_spanned(
+										other,
+										r#"expected "table.pk""#,
+									)
+									.to_compile_error()
+									.into();
+								}
+							}
+						}
+						NestedMeta::Meta(Meta::List(inner))
+							if inner.path.is_ident("cascade_type") =>
+						{
+							for inner_nested in inner.nested {
+								if let NestedMeta::Meta(Meta::Path(path)) =
+									inner_nested
+								{
+									if path.is_ident("cascade") {
+										cascade_type =
+											Some(CascadeType::Cascade);
+									} else if path.is_ident("restrict") {
+										cascade_type =
+											Some(CascadeType::Restrict);
+									} else if path.is_ident("set_null") {
+										cascade_type =
+											Some(CascadeType::SetNull);
+									} else {
+										return Error::new_spanned(
+											path,
+											"unknown cascade type; expected \
+											 cascade, restrict, or set_null",
+										)
+										.to_compile_error()
+										.into();
+									}
+								}
+							}
+						}
+						_ => {}
+					}
+				}
+
+				let Some(to) = to_value else {
+					return Error::new(
+						attr.span(),
+						r#"missing `to = "table.pk"`"#,
+					)
+					.to_compile_error()
+					.into();
+				};
+
+				let mut parts = to.split('.');
+				let right_table = parts
+					.next()
+					.ok_or_else(|| Error::new(attr.span(), "missing table"))
+					.unwrap()
+					.to_string();
+				let right_pk = parts
+					.next()
+					.ok_or_else(|| Error::new(attr.span(), "missing pk"))
+					.unwrap()
+					.to_string();
+
+				if parts.next().is_some() {
+					return Error::new(
+						attr.span(),
+						r#"invalid `to` — expected "table.pk""#,
+					)
+					.to_compile_error()
+					.into();
+				}
+
+				let alias_segment = derive_alias_segment(&field_name_snake);
+				let right_pascal = right_table.to_pascal_case();
+				let variant_ident = format_ident!(
+					"{}To{}By{}",
+					struct_ident,
+					right_pascal,
+					field_name_pascal
+				);
+
+				fk_specs.push(FkSpec {
+					fk_field_snake: field_name_snake.clone(),
+					right_table,
+					right_pk,
+					alias_segment,
+					variant_ident,
+					cascade_type,
+				});
+			}
+		}
+
+		if let Some(attr) = navigation_attr {
+			let Some(inner_ty) = extract_join_value_inner(&field.ty) else {
+				return Error::new_spanned(
+					&field.ty,
+					"navigation properties must use JoinValue<T>",
+				)
+				.to_compile_error()
+				.into();
+			};
+
+			let via = attr
+				.via
+				.unwrap_or_else(|| format!("{}_id", field_name_snake));
+
+			let fk = match fk_specs.iter().find(|fk| fk.fk_field_snake == via) {
+				Some(fk) => fk,
+				None => {
+					return Error::new(
+						field.span(),
+						format!(
+							"navigation property `{}` references unknown \
+							 foreign key `{}`",
+							field_name_snake, via,
+						),
+					)
+					.to_compile_error()
+					.into();
+				}
+			};
+
+			let nested_variant = format_ident!("{}Nested", field_name_pascal);
+			let config_variant = format_ident!("{}", field_name_pascal);
+			let label = syn::LitStr::new(
+				&format!(
+					"{}FullTextSearchJoin::{}",
+					struct_ident, field_name_pascal
+				),
+				proc_macro2::Span::call_site(),
+			);
+			let nested_label = syn::LitStr::new(
+				&format!(
+					"{}FullTextSearchJoin::{}",
+					struct_ident,
+					format!("{}Nested", field_name_pascal)
+				),
+				proc_macro2::Span::call_site(),
+			);
+
+			join_infos.push(JoinInfo {
+				config_variant,
+				join_variant: fk.variant_ident.clone(),
+				nested_variant,
+				related_ty: inner_ty,
+				label,
+				nested_label,
+			});
+		}
 
 		if fts_attr.as_ref().map_or(false, |attr| attr.ignore) {
 			continue;
@@ -2785,10 +2998,6 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 
 			continue;
 		}
-
-		let field_ident = field.ident.as_ref().expect("named field");
-		let field_name_pascal = field_ident.to_string().to_pascal_case();
-		let field_name_snake = field_ident.to_string().to_snake_case();
 
 		let weight_variant = fts_attr
 			.as_ref()
@@ -2852,6 +3061,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 	);
 	let fts_enum_ident = format_ident!("{}FullTextSearchField", struct_ident);
 	let config_ident = format_ident!("{}FullTextSearchConfig", struct_ident);
+	let join_enum_ident = format_ident!("{}FullTextSearchJoin", struct_ident);
 
 	let column_name_arms = fields_info.iter().map(|info| {
 		let variant = &info.variant;
@@ -2912,6 +3122,213 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		}
 	});
 
+	let (join_enum_tokens, join_impl_tokens, join_push_logic) =
+		if join_infos.is_empty() {
+			let never_variant = format_ident!("__SqlxoNever");
+			let enum_tokens = quote! {
+				#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+				pub enum #join_enum_ident {
+					#[doc(hidden)]
+					#never_variant,
+				}
+			};
+			let impl_tokens = quote! {
+				impl #join_enum_ident {
+					pub fn join_path(&self) -> #root::JoinPath {
+						match self {
+							Self::#never_variant => panic!(
+								"{} has no searchable joins",
+								stringify!(#struct_ident)
+							),
+						}
+					}
+
+					pub fn push_join_tsvector<W>(
+						&self,
+						_w: &mut W,
+						_wrote_segment: &mut bool,
+						_joins: Option<&[#root::JoinPath]>,
+						_config: &#config_ident,
+					) where
+						W: #root::SqlWrite,
+					{
+						match self {
+							Self::#never_variant => panic!(
+								"{} has no searchable joins",
+								stringify!(#struct_ident)
+							),
+						}
+					}
+				}
+			};
+			(enum_tokens, impl_tokens, quote! {})
+		} else {
+			let direct_variants: Vec<_> = join_infos
+				.iter()
+				.map(|info| {
+					let config_variant = &info.config_variant;
+					quote! { #config_variant }
+				})
+				.collect();
+			let nested_variants: Vec<_> = join_infos
+				.iter()
+				.map(|info| {
+					let nested_variant = &info.nested_variant;
+					let related_ty = &info.related_ty;
+					quote! {
+						#nested_variant(
+							<#related_ty as #root::FullTextSearchable>::FullTextSearchJoin
+						)
+					}
+				})
+				.collect();
+
+			let join_path_direct: Vec<_> = join_infos
+				.iter()
+				.map(|info| {
+					let config_variant = &info.config_variant;
+					let join_variant = &info.join_variant;
+					quote! { Self::#config_variant => #join_ident::#join_variant.left(), }
+				})
+				.collect();
+			let join_path_nested: Vec<_> = join_infos
+				.iter()
+				.map(|info| {
+					let join_variant = &info.join_variant;
+					let nested_variant = &info.nested_variant;
+					quote! {
+						Self::#nested_variant(nested) => {
+							let mut path = #join_ident::#join_variant.left();
+							let nested_path = nested.join_path();
+							path.append(&nested_path);
+							path
+						}
+					}
+				})
+				.collect();
+
+			let join_push_direct: Vec<_> = join_infos
+				.iter()
+				.map(|info| {
+					let config_variant = &info.config_variant;
+					let join_variant = &info.join_variant;
+					let related_ty = &info.related_ty;
+					let label = &info.label;
+					quote! {
+						Self::#config_variant => {
+							let path = #join_ident::#join_variant.left();
+							let alias =
+								#root::fts::ensure_join_alias(joins, &path, #label);
+							let nested_paths_owned =
+								#root::fts::nested_join_paths(joins, &path);
+							let nested_paths = nested_paths_owned.as_deref();
+							if *wrote_segment {
+								w.push(" || ");
+							}
+
+							let mut join_config =
+								<#related_ty as #root::FullTextSearchable>::FullTextSearchConfig::new(
+									config.query().to_string(),
+								);
+							join_config =
+								join_config.with_language(config.language().to_string());
+							<#related_ty as #root::FullTextSearchable>::write_tsvector(
+								w,
+								alias.as_str(),
+								nested_paths,
+								&join_config,
+							);
+							*wrote_segment = true;
+						}
+					}
+				})
+				.collect();
+
+			let join_push_nested: Vec<_> = join_infos
+				.iter()
+				.map(|info| {
+					let join_variant = &info.join_variant;
+					let nested_variant = &info.nested_variant;
+					let related_ty = &info.related_ty;
+					let nested_label = &info.nested_label;
+					quote! {
+						Self::#nested_variant(nested) => {
+							let path = #join_ident::#join_variant.left();
+							let alias = #root::fts::ensure_join_alias(
+								joins,
+								&path,
+								#nested_label,
+							);
+
+							let nested_paths_owned =
+								#root::fts::nested_join_paths(joins, &path);
+							let nested_paths = nested_paths_owned.as_deref();
+
+							if *wrote_segment {
+								w.push(" || ");
+							}
+							let mut join_config =
+								<#related_ty as #root::FullTextSearchable>::FullTextSearchConfig::new(
+									config.query().to_string(),
+								);
+							join_config =
+								join_config.with_language(config.language().to_string());
+							join_config = join_config.include_join(*nested);
+							<#related_ty as #root::FullTextSearchable>::write_tsvector(
+								w,
+								alias.as_str(),
+								nested_paths,
+								&join_config,
+							);
+							*wrote_segment = true;
+						}
+					}
+				})
+				.collect();
+
+			let enum_tokens = quote! {
+				#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+				pub enum #join_enum_ident {
+					#(#direct_variants),*
+					#(, #nested_variants)*
+				}
+			};
+
+			let impl_tokens = quote! {
+				impl #join_enum_ident {
+					pub fn join_path(&self) -> #root::JoinPath {
+						match self {
+							#(#join_path_direct)*
+							#(#join_path_nested)*
+						}
+					}
+
+					pub fn push_join_tsvector<W>(
+						&self,
+						w: &mut W,
+						wrote_segment: &mut bool,
+						joins: Option<&[#root::JoinPath]>,
+						config: &#config_ident,
+					) where
+						W: #root::SqlWrite,
+					{
+						match self {
+							#(#join_push_direct)*
+							#(#join_push_nested)*
+						}
+					}
+				}
+			};
+
+			let push_logic = quote! {
+				for join in config.joins() {
+					join.push_join_tsvector(w, &mut wrote_segment, joins, config);
+				}
+			};
+
+			(enum_tokens, impl_tokens, push_logic)
+		};
+
 	let out = quote! {
 		const #const_ident: &str = #language_lit;
 
@@ -2940,16 +3357,19 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			}
 		}
 
-		#[derive(Debug, Clone)]
-		pub struct #config_ident {
-			query:            String,
-			language:         String,
-			weight_overrides: Vec<(#fts_enum_ident, #root::SearchWeight)>,
-			ignored_fields:   Vec<#fts_enum_ident>,
-			include_rank:     bool,
-		}
+	#[derive(Debug, Clone)]
+	pub struct #config_ident {
+		query:            String,
+		language:         String,
+		weight_overrides: Vec<(#fts_enum_ident, #root::SearchWeight)>,
+		ignored_fields:   Vec<#fts_enum_ident>,
+		include_rank:     bool,
+		joins:            Vec<#join_enum_ident>,
+	}
 
-		impl #config_ident {
+	#join_enum_tokens
+
+	impl #config_ident {
 			pub fn new(query: impl Into<String>) -> Self {
 				Self {
 					query:            query.into(),
@@ -2957,6 +3377,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 					weight_overrides: Vec::new(),
 					ignored_fields:   Vec::new(),
 					include_rank:     true,
+					joins:            Vec::new(),
 				}
 			}
 
@@ -2993,6 +3414,34 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				self
 			}
 
+			pub fn include_join(
+				mut self,
+				join: #join_enum_ident,
+			) -> Self {
+				if !self.joins.contains(&join) {
+					self.joins.push(join);
+				}
+				self
+			}
+
+			pub fn include_joins<I>(mut self, joins: I) -> Self
+			where
+				I: IntoIterator<Item = #join_enum_ident>,
+			{
+				for join in joins {
+					self = self.include_join(join);
+				}
+				self
+			}
+
+			pub fn joins(&self) -> &[#join_enum_ident] {
+				&self.joins
+			}
+
+			pub fn query(&self) -> &str {
+				&self.query
+			}
+
 			pub fn include_rank(&self) -> bool {
 				self.include_rank
 			}
@@ -3024,7 +3473,9 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			}
 		}
 
-		impl #root::FullTextSearchConfig for #config_ident {
+	#join_impl_tokens
+
+	impl #root::FullTextSearchConfig for #config_ident {
 			fn include_rank(&self) -> bool {
 				self.include_rank
 			}
@@ -3033,16 +3484,19 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		impl #root::FullTextSearchable for #struct_ident {
 			type FullTextSearchField = #fts_enum_ident;
 			type FullTextSearchConfig = #config_ident;
+			type FullTextSearchJoin = #join_enum_ident;
 
 			fn write_tsvector<W>(
 				w: &mut W,
 				base_alias: &str,
+				joins: Option<&[#root::JoinPath]>,
 				config: &Self::FullTextSearchConfig,
 			) where
 				W: #root::SqlWrite,
 			{
 				let mut wrote_segment = false;
 				#(#write_segments)*
+				#join_push_logic
 
 				if !wrote_segment {
 					w.push("to_tsvector('");
@@ -3065,12 +3519,13 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			fn write_rank<W>(
 				w: &mut W,
 				base_alias: &str,
+				joins: Option<&[#root::JoinPath]>,
 				config: &Self::FullTextSearchConfig,
 			) where
 				W: #root::SqlWrite,
 			{
 				w.push("ts_rank(");
-				Self::write_tsvector(w, base_alias, config);
+				Self::write_tsvector(w, base_alias, joins, config);
 				w.push(", ");
 				Self::write_tsquery(w, config);
 				w.push(")");

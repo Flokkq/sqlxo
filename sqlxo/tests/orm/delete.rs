@@ -125,8 +125,8 @@ fn test_read_excludes_soft_deleted() {
 	let sql = plan.sql(SelectType::Star).normalize();
 	assert_eq!(
 		sql,
-		"SELECT * FROM soft_item WHERE \"soft_item\".\"deleted_at\" IS NULL \
-		 AND (\"soft_item\".\"name\" = $1)"
+		"SELECT \"soft_item\".* FROM soft_item WHERE \
+		 \"soft_item\".\"deleted_at\" IS NULL AND (\"soft_item\".\"name\" = $1)"
 	);
 }
 
@@ -147,7 +147,7 @@ fn test_read_includes_soft_deleted_when_requested() {
 	let sql = plan.sql(SelectType::Star).normalize();
 	assert_eq!(
 		sql,
-		"SELECT * FROM soft_item WHERE \"soft_item\".\"name\" = $1"
+		"SELECT \"soft_item\".* FROM soft_item WHERE \"soft_item\".\"name\" = $1"
 	);
 }
 
@@ -167,7 +167,8 @@ fn test_read_hard_delete_no_filter() {
 	let sql = plan.sql(SelectType::Star).normalize();
 	assert_eq!(
 		sql,
-		"SELECT * FROM hard_item WHERE \"hard_item\".\"name\" = $1"
+		"SELECT \"hard_item\".* FROM hard_item WHERE \"hard_item\".\"name\" = \
+		 $1"
 	);
 }
 
@@ -190,6 +191,7 @@ fn test_read_soft_delete_without_where() {
 	let sql = plan.sql(SelectType::Star).normalize();
 	assert_eq!(
 		sql,
-		"SELECT * FROM soft_item WHERE \"soft_item\".\"deleted_at\" IS NULL"
+		"SELECT \"soft_item\".* FROM soft_item WHERE \
+		 \"soft_item\".\"deleted_at\" IS NULL"
 	);
 }

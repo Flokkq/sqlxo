@@ -79,7 +79,7 @@ fn query_builder_from_dto_filter() {
 	assert_eq!(
 		plan.sql(SelectType::Star).trim_start().normalize(),
 		r#"
-        SELECT *, "material__"."id" AS "__sqlxo_material__id",
+        SELECT "item".*, "material__"."id" AS "__sqlxo_material__id",
             "material__"."name" AS "__sqlxo_material__name",
             "material__"."long_name" AS "__sqlxo_material__long_name",
             "material__"."description" AS "__sqlxo_material__description",

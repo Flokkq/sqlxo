@@ -46,7 +46,7 @@ fn dto_filter_combined_with_inline_filter() {
 	assert_eq!(
 		plan.sql(SelectType::Star).trim_start().normalize(),
 		r#"
-        SELECT *
+        SELECT "item".*
         FROM item
         WHERE ("item"."name" LIKE $1 AND ("item"."name" IS NULL AND "item"."amount" = $2)) ORDER BY "item"."name" ASC
     "#

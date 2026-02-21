@@ -64,9 +64,19 @@ pub struct JoinSegment {
 	pub kind:       JoinKind,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JoinPath {
 	segments: Vec<JoinSegment>,
+	start:    usize,
+}
+
+impl Default for JoinPath {
+	fn default() -> Self {
+		Self {
+			segments: Vec::new(),
+			start:    0,
+		}
+	}
 }
 
 impl JoinPath {
@@ -77,6 +87,7 @@ impl JoinPath {
 	pub fn new(descriptor: JoinDescriptor, kind: JoinKind) -> Self {
 		Self {
 			segments: vec![JoinSegment { descriptor, kind }],
+			start:    0,
 		}
 	}
 
@@ -97,25 +108,77 @@ impl JoinPath {
 	}
 
 	pub fn segments(&self) -> &[JoinSegment] {
-		&self.segments
+		&self.segments[self.start..]
+	}
+
+	pub fn len(&self) -> usize {
+		self.segments().len()
+	}
+
+	pub fn append(&mut self, tail: &JoinPath) {
+		if tail.is_empty() {
+			return;
+		}
+
+		let Some(last) = self.segments().last() else {
+			return;
+		};
+		let Some(first) = tail.segments().first() else {
+			return;
+		};
+
+		assert_eq!(
+			last.descriptor.right_table, first.descriptor.left_table,
+			"Invalid join append: left table `{}` does not match `{}`",
+			last.descriptor.right_table, first.descriptor.left_table,
+		);
+
+		self.segments.extend_from_slice(tail.segments());
+	}
+
+	pub fn strip_prefix(&self, len: usize) -> Option<Self> {
+		let new_start = self.start + len;
+		if new_start > self.segments.len() {
+			return None;
+		}
+
+		Some(Self {
+			segments: self.segments.clone(),
+			start:    new_start,
+		})
 	}
 
 	pub fn tail(&self) -> Option<Self> {
-		if self.segments.len() <= 1 {
+		if self.segments.len() - self.start <= 1 {
 			None
 		} else {
 			Some(Self {
-				segments: self.segments[1..].to_vec(),
+				segments: self.segments.clone(),
+				start:    self.start + 1,
 			})
 		}
 	}
 
 	pub fn is_empty(&self) -> bool {
-		self.segments.is_empty()
+		self.len() == 0
 	}
 
 	pub fn first_table(&self) -> Option<&'static str> {
-		self.segments.first().map(|seg| seg.descriptor.left_table)
+		self.segments().first().map(|seg| seg.descriptor.left_table)
+	}
+
+	pub fn alias(&self) -> String {
+		self.alias_prefix(self.len())
+	}
+
+	pub fn alias_prefix(&self, len: usize) -> String {
+		assert!(len <= self.len());
+		let mut alias = String::new();
+		let end = self.start + len;
+		for segment in &self.segments[..end] {
+			alias.push_str(segment.descriptor.alias_segment);
+		}
+		alias
 	}
 }
 
@@ -294,10 +357,12 @@ pub trait FullTextSearchConfig {
 pub trait FullTextSearchable: Sized {
 	type FullTextSearchField: Copy + Eq;
 	type FullTextSearchConfig: FullTextSearchConfig + Send + Sync;
+	type FullTextSearchJoin: Copy + Eq;
 
 	fn write_tsvector<W>(
 		w: &mut W,
 		base_alias: &str,
+		joins: Option<&[JoinPath]>,
 		config: &Self::FullTextSearchConfig,
 	) where
 		W: SqlWrite;
@@ -309,6 +374,7 @@ pub trait FullTextSearchable: Sized {
 	fn write_rank<W>(
 		w: &mut W,
 		base_alias: &str,
+		joins: Option<&[JoinPath]>,
 		config: &Self::FullTextSearchConfig,
 	) where
 		W: SqlWrite;

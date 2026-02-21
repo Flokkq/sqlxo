@@ -61,9 +61,19 @@ where
 }
 
 pub(crate) trait DynFullTextSearchPlan: Send + Sync {
-	fn write_condition(&self, w: &mut SqlWriter, base_alias: &str);
+	fn write_condition(
+		&self,
+		w: &mut SqlWriter,
+		base_alias: &str,
+		joins: Option<&[JoinPath]>,
+	);
 
-	fn write_rank_expr(&self, w: &mut SqlWriter, base_alias: &str);
+	fn write_rank_expr(
+		&self,
+		w: &mut SqlWriter,
+		base_alias: &str,
+		joins: Option<&[JoinPath]>,
+	);
 
 	fn include_rank(&self) -> bool;
 }
@@ -93,16 +103,26 @@ where
 	M: FullTextSearchable + Send + Sync + 'static,
 	M::FullTextSearchConfig: Send + Sync,
 {
-	fn write_condition(&self, w: &mut SqlWriter, base_alias: &str) {
+	fn write_condition(
+		&self,
+		w: &mut SqlWriter,
+		base_alias: &str,
+		joins: Option<&[JoinPath]>,
+	) {
 		w.push("(");
-		M::write_tsvector(w, base_alias, &self.config);
+		M::write_tsvector(w, base_alias, joins, &self.config);
 		w.push(") @@ (");
 		M::write_tsquery(w, &self.config);
 		w.push(")");
 	}
 
-	fn write_rank_expr(&self, w: &mut SqlWriter, base_alias: &str) {
-		M::write_rank(w, base_alias, &self.config);
+	fn write_rank_expr(
+		&self,
+		w: &mut SqlWriter,
+		base_alias: &str,
+		joins: Option<&[JoinPath]>,
+	) {
+		M::write_rank(w, base_alias, joins, &self.config);
 	}
 
 	fn include_rank(&self) -> bool {
@@ -221,7 +241,11 @@ where
 			if let Some(fts) = &self.full_text_search {
 				if fts.include_rank() {
 					w.push_order_by_raw(|writer| {
-						fts.write_rank_expr(writer, self.table);
+						fts.write_rank_expr(
+							writer,
+							self.table,
+							self.joins.as_deref(),
+						);
 						writer.push(" DESC");
 					});
 				}
@@ -319,7 +343,7 @@ where
 				if wrap {
 					writer.push("(");
 				}
-				fts.write_condition(writer, self.table);
+				fts.write_condition(writer, self.table, self.joins.as_deref());
 				if wrap {
 					writer.push(")");
 				}

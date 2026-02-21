@@ -90,13 +90,16 @@ pub struct ItemDto {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+#[derive(Debug, FromRow, Clone, Query, FullTextSearchable, PartialEq)]
 pub struct Material {
 	#[primary_key]
 	pub id: Uuid,
 
+	#[sqlxo(fts(weight = "A"))]
 	pub name:        String,
+	#[sqlxo(fts(weight = "B"))]
 	pub long_name:   String,
+	#[sqlxo(fts(weight = "C"))]
 	pub description: String,
 	#[foreign_key(to = "supplier.id")]
 	pub supplier_id: Option<Uuid>,
@@ -107,10 +110,11 @@ pub struct Material {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+#[derive(Debug, FromRow, Clone, Query, FullTextSearchable, PartialEq)]
 pub struct Supplier {
 	#[primary_key]
 	pub id:   Uuid,
+	#[sqlxo(fts(weight = "A"))]
 	pub name: String,
 }
 

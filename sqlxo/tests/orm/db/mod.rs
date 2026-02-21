@@ -36,11 +36,14 @@ use crate::helpers::{
 	Item,
 	ItemColumn,
 	ItemFullTextSearchConfig,
+	ItemFullTextSearchJoin,
 	ItemJoin,
 	ItemQuery,
 	ItemSort,
 	Material,
+	MaterialFullTextSearchJoin,
 	MaterialJoin,
+	Supplier,
 };
 
 #[derive(Debug, Clone)]
@@ -276,6 +279,113 @@ fn full_text_search_respects_manual_ordering() {
 	);
 }
 
+#[tokio::test]
+async fn full_text_search_includes_joined_table_fields() {
+	let pool = get_connection_pool().await;
+
+	let supplier = Supplier {
+		id:   Uuid::new_v4(),
+		name: "Alloy Works".into(),
+	};
+	insert_supplier(&supplier, &pool).await.unwrap();
+
+	let material = Material {
+		id:          Uuid::new_v4(),
+		name:        "marine alloy".into(),
+		long_name:   "marine alloy long".into(),
+		description: "rugged corrosion resistant".into(),
+		supplier_id: Some(supplier.id),
+		supplier:    JoinValue::default(),
+	};
+	insert_material(&material, &pool).await.unwrap();
+
+	let mut matching_item = Item::default();
+	matching_item.name = "hardware kit".into();
+	matching_item.description = "no keyword match".into();
+	matching_item.material_id = Some(material.id);
+	insert_item(&matching_item, &pool).await.unwrap();
+
+	let mut missing_item = Item::default();
+	missing_item.name = "spare bolt".into();
+	missing_item.material_id = None;
+	insert_item(&missing_item, &pool).await.unwrap();
+
+	let plan = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Left)
+		.search(
+			ItemFullTextSearchConfig::new("alloy")
+				.include_join(ItemFullTextSearchJoin::Material),
+		)
+		.build();
+	print!("{}", plan.sql(SelectType::Star));
+	let rows = plan.fetch_all(&pool).await.unwrap();
+
+	assert_eq!(rows.len(), 1);
+	assert_eq!(rows[0].id, matching_item.id);
+}
+
+#[tokio::test]
+async fn full_text_search_supports_multi_hop_joined_fields() {
+	let pool = get_connection_pool().await;
+
+	let supplier = Supplier {
+		id:   Uuid::new_v4(),
+		name: "Acme Components".into(),
+	};
+	insert_supplier(&supplier, &pool).await.unwrap();
+
+	let material = Material {
+		id:          Uuid::new_v4(),
+		name:        "steel bracket".into(),
+		long_name:   "steel bracket long".into(),
+		description: "support".into(),
+		supplier_id: Some(supplier.id),
+		supplier:    JoinValue::default(),
+	};
+	insert_material(&material, &pool).await.unwrap();
+
+	let mut item = Item::default();
+	item.name = "assembly kit".into();
+	item.material_id = Some(material.id);
+	item.description = "no supplier keyword".into();
+	insert_item(&item, &pool).await.unwrap();
+
+	let plan = QueryBuilder::<Item>::read()
+		.join_path(
+			ItemJoin::ItemToMaterialByMaterialId
+				.path(JoinKind::Left)
+				.then(
+					MaterialJoin::MaterialToSupplierBySupplierId,
+					JoinKind::Left,
+				),
+		)
+		.search(ItemFullTextSearchConfig::new("acme").include_join(
+			ItemFullTextSearchJoin::MaterialNested(
+				MaterialFullTextSearchJoin::Supplier,
+			),
+		))
+		.build();
+
+	let rows = plan.fetch_all(&pool).await.unwrap();
+
+	assert_eq!(rows.len(), 1);
+	assert_eq!(rows[0].id, item.id);
+}
+
+#[test]
+fn full_text_search_panics_when_join_missing() {
+	let result = std::panic::catch_unwind(|| {
+		QueryBuilder::<Item>::read()
+			.search(
+				ItemFullTextSearchConfig::new("bolt")
+					.include_join(ItemFullTextSearchJoin::Material),
+			)
+			.build()
+			.sql(SelectType::Star);
+	});
+	assert!(result.is_err());
+}
+
 async fn insert_hard_delete_item(
 	item: &HardDeleteItem,
 	pool: &PgPool,
@@ -290,6 +400,36 @@ async fn insert_hard_delete_item(
 	.bind(&item.name)
 	.bind(&item.description)
 	.bind(item.price)
+	.execute(pool)
+	.await
+	.map(|_| ())
+}
+
+async fn insert_supplier(
+	supplier: &Supplier,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
+	sqlx::query("INSERT INTO supplier (id, name) VALUES ($1, $2)")
+		.bind(supplier.id)
+		.bind(&supplier.name)
+		.execute(pool)
+		.await
+		.map(|_| ())
+}
+
+async fn insert_material(
+	material: &Material,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
+	sqlx::query(
+		"INSERT INTO material (id, name, long_name, description, supplier_id) \
+		 VALUES ($1, $2, $3, $4, $5)",
+	)
+	.bind(material.id)
+	.bind(&material.name)
+	.bind(&material.long_name)
+	.bind(&material.description)
+	.bind(material.supplier_id)
 	.execute(pool)
 	.await
 	.map(|_| ())
