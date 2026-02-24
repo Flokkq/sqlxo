@@ -557,6 +557,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 	let query_ident = format_ident!("{}Query", struct_ident);
 	let sort_ident = format_ident!("{}Sort", struct_ident);
 	let column_mod_ident = format_ident!("{}Column", struct_ident);
+	let agg_struct_ident = format_ident!("{}Agg", struct_ident);
 
 	let data = match &input.data {
 		Data::Struct(s) => s,
@@ -1439,6 +1440,56 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 		impl #struct_ident {
 			#(#column_type_aliases)*
+		}
+
+		pub struct #agg_struct_ident;
+
+		impl #agg_struct_ident {
+			pub const fn CountAll() -> #root::select::CountAllExpr {
+				#root::select::CountAllExpr::new()
+			}
+
+			pub const fn Count<C>(_: C) -> #root::select::CountExpr<C>
+			where
+				C: #root::select::Column<Model = #struct_ident>,
+			{
+				#root::select::CountExpr::new()
+			}
+
+			pub const fn CountDistinct<C>(_: C) -> #root::select::CountDistinctExpr<C>
+			where
+				C: #root::select::Column<Model = #struct_ident>,
+			{
+				#root::select::CountDistinctExpr::new()
+			}
+
+			pub const fn Sum<C>(_: C) -> #root::select::SumExpr<C>
+			where
+				C: #root::select::Column<Model = #struct_ident>,
+			{
+				#root::select::SumExpr::new()
+			}
+
+			pub const fn Avg<C>(_: C) -> #root::select::AvgExpr<C>
+			where
+				C: #root::select::Column<Model = #struct_ident>,
+			{
+				#root::select::AvgExpr::new()
+			}
+
+			pub const fn Min<C>(_: C) -> #root::select::MinExpr<C>
+			where
+				C: #root::select::Column<Model = #struct_ident>,
+			{
+				#root::select::MinExpr::new()
+			}
+
+			pub const fn Max<C>(_: C) -> #root::select::MaxExpr<C>
+			where
+				C: #root::select::Column<Model = #struct_ident>,
+			{
+				#root::select::MaxExpr::new()
+			}
 		}
 	};
 

@@ -20,11 +20,11 @@ mod sort;
 
 pub use expression::Expression;
 pub use head::{
-	AggregationType,
 	DeleteHead,
 	InsertHead,
 	QualifiedColumn,
 	ReadHead,
+	SelectProjection,
 	SelectType,
 	UpdateHead,
 };
@@ -63,6 +63,8 @@ pub struct SqlWriter {
 	has_join:       bool,
 	has_where:      bool,
 	has_sort:       bool,
+	has_group_by:   bool,
+	has_having:     bool,
 	has_pagination: bool,
 }
 
@@ -76,6 +78,8 @@ impl SqlWriter {
 			has_join: false,
 			has_where: false,
 			has_sort: false,
+			has_group_by: false,
+			has_having: false,
 			has_pagination: false,
 		}
 	}
@@ -165,6 +169,32 @@ impl SqlWriter {
 		}
 		self.qb.push(" ORDER BY ");
 		self.has_sort = true;
+		build(self);
+	}
+
+	pub fn push_group_by_columns(&mut self, columns: &[QualifiedColumn]) {
+		if columns.is_empty() || self.has_group_by {
+			return;
+		}
+
+		self.qb.push(" GROUP BY ");
+		for (idx, col) in columns.iter().enumerate() {
+			if idx > 0 {
+				self.qb.push(", ");
+			}
+			self.qb
+				.push(format!(r#""{}"."{}""#, col.table_alias, col.column));
+		}
+		self.has_group_by = true;
+	}
+
+	pub fn push_having(&mut self, mut build: impl FnMut(&mut SqlWriter)) {
+		if self.has_having {
+			self.qb.push(" AND ");
+		} else {
+			self.qb.push(" HAVING ");
+			self.has_having = true;
+		}
 		build(self);
 	}
 

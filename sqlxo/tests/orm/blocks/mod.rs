@@ -59,8 +59,13 @@ fn take_macro_emits_selection_list_for_blocks() {
 	let plain_take = &["id", "name"];
 	let macro_take = sqlxo::take!(ItemColumn::Id, ItemColumn::Name);
 
-	let macro_cols: Vec<_> =
-		macro_take.columns().iter().map(|col| col.column).collect();
+	let macro_cols: Vec<_> = macro_take
+		.clone()
+		.expect_columns()
+		.columns()
+		.iter()
+		.map(|col| col.column)
+		.collect();
 
 	assert_eq!(plain_take, macro_cols.as_slice());
 }

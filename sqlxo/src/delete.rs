@@ -43,7 +43,7 @@ pub struct DeleteQueryPlan<
 	pub(crate) table: &'a str,
 	pub(crate) is_soft: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
-	pub(crate) selection: Option<SelectionList<Row>>,
+	pub(crate) selection: Option<SelectionList<Row, select::SelectionColumn>>,
 	row: PhantomData<Row>,
 }
 
@@ -151,7 +151,7 @@ pub struct DeleteQueryBuilder<
 	pub(crate) where_expr: Option<Expression<C::Query>>,
 	pub(crate) is_soft: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
-	pub(crate) selection: Option<SelectionList<Row>>,
+	pub(crate) selection: Option<SelectionList<Row, select::SelectionColumn>>,
 	row: PhantomData<Row>,
 }
 
@@ -223,7 +223,7 @@ where
 {
 	pub fn take<NewRow>(
 		self,
-		selection: SelectionList<NewRow>,
+		selection: SelectionList<NewRow, select::SelectionEntry>,
 	) -> DeleteQueryBuilder<'a, C, NewRow>
 	where
 		NewRow: Send
@@ -236,7 +236,7 @@ where
 			where_expr:          self.where_expr,
 			is_soft:             self.is_soft,
 			delete_marker_field: self.delete_marker_field,
-			selection:           Some(selection),
+			selection:           Some(selection.expect_columns()),
 			row:                 PhantomData,
 		}
 	}

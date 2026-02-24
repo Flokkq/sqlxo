@@ -110,6 +110,69 @@ fn read_builder_allows_custom_row_type() {
 }
 
 #[test]
+fn read_builder_allows_aggregate_take() {
+	let plan: ReadQueryPlan<Item, (i64,)> = QueryBuilder::<Item>::read()
+		.take(sqlxo::take!(crate::helpers::ItemAgg::CountAll()))
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).normalize(),
+		r#"SELECT COUNT(*) AS "__sqlxo_sel_0" FROM item"#.normalize()
+	);
+}
+
+#[test]
+fn read_builder_allows_mixed_take() {
+	let plan: ReadQueryPlan<Item, (String, Option<f32>, i64)> =
+		QueryBuilder::<Item>::read()
+			.take(sqlxo::take!(
+				crate::helpers::ItemColumn::Name,
+				crate::helpers::ItemAgg::Sum(crate::helpers::ItemColumn::Price),
+				crate::helpers::ItemAgg::CountAll()
+			))
+			.group_by(sqlxo::group_by!(crate::helpers::ItemColumn::Name))
+			.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).normalize(),
+		r#"SELECT "item"."name", SUM("item"."price") AS "__sqlxo_sel_1", COUNT(*) AS "__sqlxo_sel_2" FROM item GROUP BY "item"."name""#
+			.normalize()
+	);
+}
+
+#[test]
+fn read_builder_allows_group_by_clause() {
+	let plan: ReadQueryPlan<Item, (Option<Uuid>, i64)> =
+		QueryBuilder::<Item>::read()
+			.take(sqlxo::take!(
+				crate::helpers::ItemColumn::MaterialId,
+				crate::helpers::ItemAgg::CountAll()
+			))
+			.group_by(sqlxo::group_by!(crate::helpers::ItemColumn::MaterialId))
+			.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).normalize(),
+		r#"SELECT "item"."material_id", COUNT(*) AS "__sqlxo_sel_1" FROM item GROUP BY "item"."material_id""#
+			.normalize()
+	);
+}
+
+#[test]
+fn read_builder_allows_having_clause() {
+	let plan: ReadQueryPlan<Item, (i64,)> = QueryBuilder::<Item>::read()
+		.take(sqlxo::take!(crate::helpers::ItemAgg::CountAll()))
+		.having(sqlxo::having!(crate::helpers::ItemAgg::CountAll().gt(5i64)))
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).normalize(),
+		r#"SELECT COUNT(*) AS "__sqlxo_sel_0" FROM item HAVING COUNT(*) > $1"#
+			.normalize()
+	);
+}
+
+#[test]
 fn delete_builder_allows_custom_row_type() {
 	let plan: DeleteQueryPlan<HardDeleteItem, (Uuid,)> =
 		QueryBuilder::<HardDeleteItem>::delete()
@@ -167,8 +230,8 @@ fn read_builder_supports_take_with_join_columns() {
 	let plan: ReadQueryPlan<Item, (Uuid, Uuid)> = QueryBuilder::<Item>::read()
 		.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Inner)
 		.take(sqlxo::take!(
-			crate::helpers::Item::ItemId,
-			crate::helpers::Material::MaterialId
+			crate::helpers::ItemColumn::Id,
+			crate::helpers::MaterialColumn::Id
 		))
 		.build();
 

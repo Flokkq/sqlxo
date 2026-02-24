@@ -41,6 +41,7 @@ use crate::helpers::{
 	ItemQuery,
 	ItemSort,
 	Material,
+	MaterialColumn,
 	MaterialFullTextSearchJoin,
 	MaterialJoin,
 	Supplier,
@@ -1117,7 +1118,7 @@ async fn read_item_with_joined_take_returns_tuple() {
 	let (item_id, joined_material_id): (Uuid, Uuid) =
 		QueryBuilder::<Item>::read()
 			.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Inner)
-			.take(sqlxo::take!(Item::ItemId, Material::MaterialId))
+			.take(sqlxo::take!(ItemColumn::Id, MaterialColumn::Id))
 			.r#where(Expression::Leaf(ItemQuery::MaterialIdEq(Some(
 				material_id,
 			))))

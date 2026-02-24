@@ -31,13 +31,20 @@ use crate::{
 		Pagination,
 		QualifiedColumn,
 		ReadHead,
+		SelectProjection,
 		SelectType,
 		SortOrder,
 		SqlWriter,
 	},
 	order_by,
 	select::{
+		AggregateFunction,
+		AggregateSelection,
+		GroupByList,
+		HavingList,
+		HavingPredicate,
 		SelectionColumn,
+		SelectionEntry,
 		SelectionList,
 	},
 	Buildable,
@@ -139,7 +146,9 @@ pub struct ReadQueryPlan<'a, C: QueryContext, Row = <C as QueryContext>::Model>
 	pub(crate) table: &'a str,
 	pub(crate) include_deleted: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
-	pub(crate) selection: Option<SelectionList<Row>>,
+	pub(crate) selection: Option<SelectionList<Row, SelectionEntry>>,
+	pub(crate) group_by: Option<Vec<SelectionColumn>>,
+	pub(crate) having: Option<Vec<HavingPredicate>>,
 	pub(crate) full_text_search: Option<Box<dyn DynFullTextSearchPlan>>,
 	row: PhantomData<Row>,
 }
@@ -204,16 +213,67 @@ fn resolve_selection_columns(
 	let mut resolved = SmallVec::new();
 
 	for col in selection {
-		let table_alias = resolve_alias_for_table(
-			col.table, col.column, base_table, &aliases,
-		);
-		resolved.push(QualifiedColumn {
-			table_alias,
-			column: col.column,
-		});
+		resolved.push(resolve_selection_column(col, base_table, &aliases));
 	}
 
 	resolved
+}
+
+fn resolve_selection_column(
+	column: &SelectionColumn,
+	base_table: &str,
+	aliases: &[(&'static str, String)],
+) -> QualifiedColumn {
+	let table_alias = resolve_alias_for_table(
+		column.table,
+		column.column,
+		base_table,
+		aliases,
+	);
+	QualifiedColumn {
+		table_alias,
+		column: column.column,
+	}
+}
+
+fn format_aggregate_expression(
+	selection: &AggregateSelection,
+	base_table: &str,
+	aliases: &[(&'static str, String)],
+) -> String {
+	match selection.column {
+		Some(col) => {
+			let qualified = resolve_selection_column(&col, base_table, aliases);
+			match selection.function {
+				AggregateFunction::CountDistinct => format!(
+					r#"COUNT(DISTINCT "{}"."{}")"#,
+					qualified.table_alias, qualified.column
+				),
+				_ => format!(
+					r#"{}("{}"."{}")"#,
+					selection.function.sql_name(),
+					qualified.table_alias,
+					qualified.column
+				),
+			}
+		}
+		None => format!("{}(*)", selection.function.sql_name()),
+	}
+}
+
+fn write_having_predicate(
+	predicate: &HavingPredicate,
+	writer: &mut SqlWriter,
+	base_table: &str,
+	aliases: &[(&'static str, String)],
+) {
+	let expr =
+		format_aggregate_expression(&predicate.selection, base_table, aliases);
+	writer.push(&expr);
+	writer.push(" ");
+	writer.push(predicate.comparator.as_str());
+	writer.push(" ");
+	predicate.bind_value(writer);
 }
 
 impl<'a, C, Row> ReadQueryPlan<'a, C, Row>
@@ -234,6 +294,8 @@ where
 		}
 
 		self.push_where_clause(&mut w);
+		self.push_group_by_clause(&mut w);
+		self.push_having_clause(&mut w);
 
 		if let Some(s) = &self.sort_expr {
 			w.push_sort(s);
@@ -273,18 +335,85 @@ where
 			SelectType::Star => self
 				.selection
 				.as_ref()
-				.map(|s| {
-					SelectType::Columns(resolve_selection_columns(
-						s.columns(),
-						self.table,
-						self.joins.as_deref(),
-					))
-				})
+				.map(|s| self.selection_select_type(s))
 				.unwrap_or(SelectType::Star),
 			other => other,
 		};
 
 		self.apply_join_extras(resolved)
+	}
+
+	fn selection_select_type(
+		&self,
+		selection: &SelectionList<Row, SelectionEntry>,
+	) -> SelectType {
+		let mut has_columns = false;
+		let mut has_aggregates = false;
+		for entry in selection.entries() {
+			match entry {
+				SelectionEntry::Column(_) => has_columns = true,
+				SelectionEntry::Aggregate(_) => has_aggregates = true,
+			}
+		}
+
+		if has_columns && has_aggregates && self.group_by.is_none() {
+			panic!(
+				"`group_by!` must be provided when selecting columns \
+				 alongside aggregates"
+			);
+		}
+
+		if has_columns && !has_aggregates {
+			let mut cols: SmallVec<[SelectionColumn; 4]> =
+				SmallVec::with_capacity(selection.entries().len());
+			for entry in selection.entries() {
+				if let SelectionEntry::Column(col) = entry {
+					cols.push(*col);
+				}
+			}
+			return SelectType::Columns(resolve_selection_columns(
+				&cols,
+				self.table,
+				self.joins.as_deref(),
+			));
+		}
+
+		let projections = self.build_projections(selection);
+		SelectType::Projection(projections)
+	}
+
+	fn build_projections(
+		&self,
+		selection: &SelectionList<Row, SelectionEntry>,
+	) -> Vec<SelectProjection> {
+		let aliases = build_alias_lookup(self.joins.as_deref());
+		selection
+			.entries()
+			.iter()
+			.enumerate()
+			.map(|(idx, entry)| match entry {
+				SelectionEntry::Column(col) => {
+					let qualified =
+						resolve_selection_column(col, self.table, &aliases);
+					SelectProjection {
+						expression: format!(
+							r#""{}"."{}""#,
+							qualified.table_alias, qualified.column
+						),
+						alias:      None,
+					}
+				}
+				SelectionEntry::Aggregate(agg) => {
+					let expr =
+						format_aggregate_expression(agg, self.table, &aliases);
+					let alias = format!(r#"__sqlxo_sel_{}"#, idx);
+					SelectProjection {
+						expression: expr,
+						alias:      Some(alias),
+					}
+				}
+			})
+			.collect()
 	}
 
 	fn apply_join_extras(&self, select: SelectType) -> SelectType {
@@ -349,6 +478,39 @@ where
 				}
 			});
 		}
+	}
+
+	fn push_group_by_clause(&self, w: &mut SqlWriter) {
+		if let Some(columns) = &self.group_by {
+			if columns.is_empty() {
+				return;
+			}
+			let resolved = resolve_selection_columns(
+				columns,
+				self.table,
+				self.joins.as_deref(),
+			);
+			w.push_group_by_columns(&resolved);
+		}
+	}
+
+	fn push_having_clause(&self, w: &mut SqlWriter) {
+		let Some(predicates) = &self.having else {
+			return;
+		};
+		if predicates.is_empty() {
+			return;
+		}
+		let aliases = build_alias_lookup(self.joins.as_deref());
+		let table = self.table;
+		w.push_having(|writer| {
+			for (idx, predicate) in predicates.iter().enumerate() {
+				if idx > 0 {
+					writer.push(" AND ");
+				}
+				write_having_predicate(predicate, writer, table, &aliases);
+			}
+		});
 	}
 
 	pub async fn fetch_page<'e, E>(
@@ -558,7 +720,9 @@ pub struct ReadQueryBuilder<
 	pub(crate) pagination: Option<Pagination>,
 	pub(crate) include_deleted: bool,
 	pub(crate) delete_marker_field: Option<&'a str>,
-	pub(crate) selection: Option<SelectionList<Row>>,
+	pub(crate) selection: Option<SelectionList<Row, SelectionEntry>>,
+	pub(crate) group_by: Option<Vec<SelectionColumn>>,
+	pub(crate) having: Option<Vec<HavingPredicate>>,
 	pub(crate) full_text_search: Option<Box<dyn DynFullTextSearchPlan>>,
 	row: PhantomData<Row>,
 }
@@ -606,6 +770,8 @@ where
 			include_deleted:     false,
 			delete_marker_field: C::Model::delete_marker_field(),
 			selection:           None,
+			group_by:            None,
+			having:              None,
 			full_text_search:    None,
 			row:                 PhantomData,
 		}
@@ -621,6 +787,8 @@ where
 			include_deleted:     self.include_deleted,
 			delete_marker_field: self.delete_marker_field,
 			selection:           self.selection,
+			group_by:            self.group_by,
+			having:              self.having,
 			full_text_search:    self.full_text_search,
 			row:                 PhantomData,
 		}
@@ -635,7 +803,7 @@ where
 {
 	pub fn take<NewRow>(
 		self,
-		selection: SelectionList<NewRow>,
+		selection: SelectionList<NewRow, SelectionEntry>,
 	) -> ReadQueryBuilder<'a, C, NewRow>
 	where
 		NewRow: Send
@@ -652,9 +820,22 @@ where
 			include_deleted:     self.include_deleted,
 			delete_marker_field: self.delete_marker_field,
 			selection:           Some(selection),
+			group_by:            self.group_by,
+			having:              self.having,
 			full_text_search:    self.full_text_search,
 			row:                 PhantomData,
 		}
+	}
+
+	pub fn group_by(mut self, group_by: GroupByList) -> Self {
+		let cols = group_by.into_columns().into_vec();
+		self.group_by = Some(cols);
+		self
+	}
+
+	pub fn having(mut self, having: HavingList) -> Self {
+		self.having = Some(having.into_predicates());
+		self
 	}
 }
 

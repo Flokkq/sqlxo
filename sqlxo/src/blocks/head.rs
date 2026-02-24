@@ -19,11 +19,11 @@ pub struct QualifiedColumn {
 pub enum SelectType {
 	Star,
 	StarWithExtras(SmallVec<[AliasedColumn; 4]>),
-	Aggregation(AggregationType),
 	StarAndCount,
 	StarAndCountExtras(SmallVec<[AliasedColumn; 4]>),
 	Exists,
 	Columns(SmallVec<[QualifiedColumn; 4]>),
+	Projection(Vec<SelectProjection>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -33,11 +33,9 @@ pub enum DeleteType {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum AggregationType {
-	Max,
-	Min,
-	Count,
-	Avg,
+pub struct SelectProjection {
+	pub expression: String,
+	pub alias:      Option<String>,
 }
 
 pub trait ToHead {
@@ -61,17 +59,6 @@ impl<'a> ToHead for ReadHead<'a> {
 	}
 }
 
-impl Display for AggregationType {
-	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		match self {
-			AggregationType::Max => f.write_str("MAX"),
-			AggregationType::Min => f.write_str("MIN"),
-			AggregationType::Count => f.write_str("COUNT"),
-			AggregationType::Avg => f.write_str("AVG"),
-		}
-	}
-}
-
 impl<'a> Display for ReadHead<'a> {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match &self.r#type {
@@ -82,9 +69,6 @@ impl<'a> Display for ReadHead<'a> {
 				write!(f, r#"SELECT "{}".*"#, self.table)?;
 				write_extras(cols, f)?;
 				write!(f, " FROM {}", self.table)
-			}
-			SelectType::Aggregation(agg) => {
-				write!(f, "SELECT {}(*) FROM {}", agg, self.table)
 			}
 			SelectType::StarAndCount => {
 				write!(
@@ -104,6 +88,19 @@ impl<'a> Display for ReadHead<'a> {
 			}
 			SelectType::Exists => {
 				write!(f, "SELECT EXISTS(SELECT 1 FROM {}", self.table)
+			}
+			SelectType::Projection(exprs) => {
+				write!(f, "SELECT ")?;
+				for (idx, expr) in exprs.iter().enumerate() {
+					if idx > 0 {
+						write!(f, ", ")?;
+					}
+					write!(f, "{}", expr.expression)?;
+					if let Some(alias) = &expr.alias {
+						write!(f, r#" AS "{}""#, alias)?;
+					}
+				}
+				write!(f, " FROM {}", self.table)
 			}
 			SelectType::Columns(cols) => {
 				let mut first = true;
