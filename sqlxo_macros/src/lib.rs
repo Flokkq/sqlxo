@@ -18,6 +18,8 @@ use quote::{
 };
 use syn::{
 	parse_macro_input,
+	parse_quote,
+	punctuated::Punctuated,
 	spanned::Spanned,
 	Data,
 	DeriveInput,
@@ -27,6 +29,8 @@ use syn::{
 	Lit,
 	Meta,
 	NestedMeta,
+	PathArguments,
+	PathSegment,
 	Visibility,
 };
 
@@ -658,6 +662,37 @@ fn extract_join_value_inner(ty: &syn::Type) -> Option<syn::Type> {
 	}
 }
 
+fn replace_last_segment_path(
+	entity_ty: &syn::Type,
+	replacement: &Ident,
+) -> syn::Path {
+	if let syn::Type::Path(type_path) = entity_ty {
+		let mut path = type_path.path.clone();
+		if let Some(last) = path.segments.last_mut() {
+			*last = PathSegment {
+				ident:     replacement.clone(),
+				arguments: PathArguments::None,
+			};
+		} else {
+			path.segments.push(PathSegment {
+				ident:     replacement.clone(),
+				arguments: PathArguments::None,
+			});
+		}
+		path
+	} else {
+		let mut segments = Punctuated::new();
+		segments.push(PathSegment {
+			ident:     replacement.clone(),
+			arguments: PathArguments::None,
+		});
+		syn::Path {
+			leading_colon: None,
+			segments,
+		}
+	}
+}
+
 #[proc_macro_derive(Query, attributes(sqlxo, primary_key, foreign_key))]
 pub fn derive_query(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
@@ -717,6 +752,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 	let mut pk_field: Option<String> = None;
 	let mut pk_field_ty: Option<syn::Type> = None;
+	let mut pk_columns: Vec<String> = Vec::new();
 	let mut fks: Vec<FkSpec> = Vec::new();
 	let mut pending_navigation: Vec<PendingNavigation> = Vec::new();
 	let mut navigation_fields: Vec<NavigationFieldSpec> = Vec::new();
@@ -814,6 +850,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				}
 				pk_field = Some(field_name_snake.clone());
 				pk_field_ty = Some(ty.clone());
+				pk_columns.push(field_name_snake.clone());
 			}
 
 			if attr.path.is_ident("foreign_key") {
@@ -1258,6 +1295,13 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			.into()
 		}
 	};
+	if pk_columns.is_empty() {
+		pk_columns.push(presence_field_name.clone());
+	}
+	let pk_column_lits: Vec<_> = pk_columns
+		.iter()
+		.map(|col| syn::LitStr::new(col, proc_macro2::Span::call_site()))
+		.collect();
 	let join_projection_push: Vec<proc_macro2::TokenStream> = db_fields
 		.iter()
 		.map(|field| {
@@ -1443,6 +1487,11 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			type Query = #query_ident;
 			type Sort  = #sort_ident;
 			type Join  = #join_ident;
+		}
+
+		impl #root::PrimaryKey for #struct_ident {
+			const PRIMARY_KEY: &'static [&'static str] =
+				&[#(#pk_column_lits),*];
 		}
 
 
@@ -1793,6 +1842,9 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 	let mut leaf_variants = Vec::new();
 	let mut sort_structs = Vec::new();
 	let mut sort_variants = Vec::new();
+	let mut agg_extra_op_defs = Vec::new();
+	let mut agg_extra_structs = Vec::new();
+	let mut agg_leaf_variants = Vec::new();
 	let agg_leaf_ident = format_ident!("{}AggregateLeaf", struct_ident);
 	let agg_count_struct = format_ident!("{}AggregateCount", struct_ident);
 	let agg_count_op_ident = format_ident!("{}AggregateCountOp", struct_ident);
@@ -1978,6 +2030,111 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		sort_variants.push(quote! {
 			#sort_variant_ident(#sort_wrap_ident)
 		});
+
+		let field_json_name_clone = field_json_name.clone();
+		let fname_ident_clone = fname_ident.clone();
+		let mut add_aggregate =
+			|suffix_pascal: &str,
+			 suffix_snake: &str,
+			 value_ty: syn::Type| {
+				let wrap_ident = format_ident!(
+					"{}Aggregate{}{}",
+					struct_ident,
+					suffix_pascal,
+					fname_pascal
+				);
+				let op_ident = format_ident!(
+					"{}Aggregate{}{}Op",
+					struct_ident,
+					suffix_pascal,
+					fname_pascal
+				);
+				let variant_ident =
+					format_ident!("{}{}", fname_pascal, suffix_pascal);
+				let field_ident =
+					format_ident!("{}_{}", fname_ident_clone, suffix_snake);
+				let serde_name =
+					format!("{}{}", field_json_name_clone, suffix_pascal);
+				let serde_lit = syn::LitStr::new(
+					&serde_name,
+					proc_macro2::Span::call_site(),
+				);
+
+				agg_extra_op_defs.push(quote! {
+					#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+					#[serde(untagged)]
+					pub enum #op_ident {
+						Eq  { eq: #value_ty },
+						Neq { neq: #value_ty },
+						Gt  { gt: #value_ty },
+						Gte { gte: #value_ty },
+						Lt  { lt: #value_ty },
+						Lte { lte: #value_ty },
+					}
+				});
+
+				agg_extra_structs.push(quote! {
+					#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+					pub struct #wrap_ident {
+						#[serde(rename = #serde_lit)]
+						pub #field_ident: #op_ident,
+					}
+				});
+
+				agg_leaf_variants.push(quote! {
+					#variant_ident(#wrap_ident)
+				});
+			};
+
+		match classify_type(ty) {
+			Kind::Number => {
+				add_aggregate(
+					"Sum",
+					"sum",
+					ty.clone(),
+				);
+				add_aggregate(
+					"Avg",
+					"avg",
+					ty.clone(),
+				);
+				add_aggregate(
+					"Min",
+					"min",
+					ty.clone(),
+				);
+				add_aggregate(
+					"Max",
+					"max",
+					ty.clone(),
+				);
+				add_aggregate(
+					"CountDistinct",
+					"count_distinct",
+					parse_quote!(i64),
+				);
+			}
+			Kind::DateTime | Kind::Date | Kind::Time => {
+				add_aggregate(
+					"Min",
+					"min",
+					ty.clone(),
+				);
+				add_aggregate(
+					"Max",
+					"max",
+					ty.clone(),
+				);
+			}
+			Kind::UuidOrScalarEq | Kind::String => {
+				add_aggregate(
+					"CountDistinct",
+					"count_distinct",
+					parse_quote!(i64),
+				);
+			}
+			Kind::Bool => {}
+		}
 	}
 
 	let out = quote! {
@@ -2001,10 +2158,15 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 			pub count: #agg_count_op_ident,
 		}
 
+		#(#agg_extra_op_defs)*
+
+		#(#agg_extra_structs)*
+
 		#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
 		#[serde(untagged)]
 		pub enum #agg_leaf_ident {
 			Count(#agg_count_struct),
+			#(#agg_leaf_variants),*
 		}
 
 
@@ -2322,6 +2484,10 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let agg_leaf_ident = format_ident!("{}AggregateLeaf", dto_ident);
 	let agg_count_struct = format_ident!("{}AggregateCount", dto_ident);
 	let agg_count_op_ident = format_ident!("{}AggregateCountOp", dto_ident);
+	let entity_struct_ident = match &entity_ty {
+		syn::Type::Path(tp) => tp.path.segments.last().unwrap().ident.clone(),
+		_ => Ident::new("Entity", proc_macro2::Span::call_site()),
+	};
 
 	let data = match &dto.data {
 		Data::Struct(s) => s,
@@ -2337,6 +2503,7 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let mut leaf_arms = Vec::new();
 	let mut sort_arms = Vec::new();
+	let mut agg_match_arms = Vec::new();
 
 	for field in data.fields.iter() {
 		let fname_ident = field.ident.as_ref().expect("named field");
@@ -2568,6 +2735,95 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
         });
+
+		let column_mod_ident = format_ident!("{}Column", entity_struct_ident);
+		let column_mod_path =
+			replace_last_segment_path(&entity_ty, &column_mod_ident);
+		let column_struct_ident = format_ident!("{}", target_pascal);
+		let column_type = quote! { #column_mod_path::#column_struct_ident };
+		let mut push_agg =
+			|suffix_pascal: &str,
+			 suffix_snake: &str,
+			 expr: proc_macro2::TokenStream| {
+				let wrap_ident = format_ident!(
+					"{}Aggregate{}{}",
+					dto_ident,
+					suffix_pascal,
+					fname_pascal
+				);
+				let op_ident = format_ident!(
+					"{}Aggregate{}{}Op",
+					dto_ident,
+					suffix_pascal,
+					fname_pascal
+				);
+				let variant_ident =
+					format_ident!("{}{}", fname_pascal, suffix_pascal);
+				let field_ident =
+					format_ident!("{}_{}", fname_ident, suffix_snake);
+				agg_match_arms.push(quote! {
+					#agg_leaf_ident::#variant_ident(inner @ #wrap_ident { .. }) => {
+						match &inner.#field_ident {
+							#op_ident::Eq { eq } => #expr.eq(eq.clone()),
+							#op_ident::Neq { neq } => #expr.ne(neq.clone()),
+							#op_ident::Gt { gt } => #expr.gt(gt.clone()),
+							#op_ident::Gte { gte } => #expr.ge(gte.clone()),
+							#op_ident::Lt { lt } => #expr.lt(lt.clone()),
+							#op_ident::Lte { lte } => #expr.le(lte.clone()),
+						}
+					}
+				});
+			};
+
+		match classify_type(ty) {
+			Kind::Number => {
+				push_agg(
+					"Sum",
+					"sum",
+					quote!(#root::select::SumExpr::<#column_type>::new()),
+				);
+				push_agg(
+					"Avg",
+					"avg",
+					quote!(#root::select::AvgExpr::<#column_type>::new()),
+				);
+				push_agg(
+					"Min",
+					"min",
+					quote!(#root::select::MinExpr::<#column_type>::new()),
+				);
+				push_agg(
+					"Max",
+					"max",
+					quote!(#root::select::MaxExpr::<#column_type>::new()),
+				);
+				push_agg(
+					"CountDistinct",
+					"count_distinct",
+					quote!(#root::select::CountDistinctExpr::<#column_type>::new()),
+				);
+			}
+			Kind::DateTime | Kind::Date | Kind::Time => {
+				push_agg(
+					"Min",
+					"min",
+					quote!(#root::select::MinExpr::<#column_type>::new()),
+				);
+				push_agg(
+					"Max",
+					"max",
+					quote!(#root::select::MaxExpr::<#column_type>::new()),
+				);
+			}
+			Kind::UuidOrScalarEq | Kind::String => {
+				push_agg(
+					"CountDistinct",
+					"count_distinct",
+					quote!(#root::select::CountDistinctExpr::<#column_type>::new()),
+				);
+			}
+			Kind::Bool => {}
+		}
 	}
 
 	let out = quote! {
@@ -2606,6 +2862,7 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 						#agg_count_op_ident::Lte { lte } => #root::select::CountAllExpr::new().le(*lte),
 					}
 				}
+				#(, #agg_match_arms)*
 			}
 		}
 	}

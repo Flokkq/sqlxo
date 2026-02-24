@@ -30,7 +30,12 @@ pub trait SqlWrite {
 pub trait QueryContext: Send + Sync + 'static {
 	const TABLE: &'static str;
 
-	type Model: QueryModel + Send + Sync + JoinNavigationModel + WebJoinGraph;
+	type Model: QueryModel
+		+ Send
+		+ Sync
+		+ JoinNavigationModel
+		+ WebJoinGraph
+		+ PrimaryKey;
 	type Query: FilterQuery + Send + Sync;
 	type Sort: QuerySort + Send + Sync;
 	type Join: SqlJoin + Send + Sync;
@@ -271,6 +276,10 @@ pub trait JoinNavigationModel {
 pub trait WebJoinGraph {
 	fn resolve_join_path(segments: &[&str], kind: JoinKind)
 		-> Option<JoinPath>;
+}
+
+pub trait PrimaryKey {
+	const PRIMARY_KEY: &'static [&'static str];
 }
 
 pub trait Model {}

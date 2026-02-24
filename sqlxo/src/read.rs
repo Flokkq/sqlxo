@@ -15,6 +15,7 @@ use sqlxo_traits::{
 	JoinKind,
 	JoinNavigationModel,
 	JoinPath,
+	PrimaryKey,
 	QueryContext,
 	SqlWrite,
 };
@@ -150,7 +151,14 @@ pub struct ReadQueryPlan<'a, C: QueryContext, Row = <C as QueryContext>::Model>
 	pub(crate) group_by: Option<Vec<SelectionColumn>>,
 	pub(crate) having: Option<Vec<HavingPredicate>>,
 	pub(crate) full_text_search: Option<Box<dyn DynFullTextSearchPlan>>,
+	pub(crate) aggregate_filter: Option<AggregateFilter>,
 	row: PhantomData<Row>,
+}
+
+#[derive(Clone)]
+pub struct AggregateFilter {
+	pub columns:    SmallVec<[&'static str; 2]>,
+	pub predicates: Vec<HavingPredicate>,
 }
 
 fn build_alias_lookup(
@@ -281,6 +289,157 @@ where
 	C: QueryContext,
 	C::Model: JoinNavigationModel,
 {
+	fn compute_aggregate_filter(&mut self) {
+		if self.having.is_none() ||
+			self.selection.is_some() ||
+			self.group_by.is_some()
+		{
+			return;
+		}
+
+		let pk_columns = <C::Model as PrimaryKey>::PRIMARY_KEY;
+		if pk_columns.is_empty() {
+			return;
+		}
+
+		let Some(predicates) = self.having.take() else {
+			return;
+		};
+		if predicates.is_empty() {
+			return;
+		}
+
+		let columns = SmallVec::<[&'static str; 2]>::from_slice(pk_columns);
+		self.aggregate_filter = Some(AggregateFilter {
+			columns,
+			predicates,
+		});
+	}
+
+	fn push_aggregate_filter_clause(
+		&self,
+		writer: &mut SqlWriter,
+		filter: &AggregateFilter,
+	) {
+		writer.push_where_raw(|w| {
+			if filter.columns.len() == 1 {
+				let col = filter.columns[0];
+				w.push(&format!(r#""{}"."{}""#, self.table, col));
+			} else {
+				w.push("(");
+				for (idx, col) in filter.columns.iter().enumerate() {
+					if idx > 0 {
+						w.push(", ");
+					}
+					w.push(&format!(r#""{}"."{}""#, self.table, col));
+				}
+				w.push(")");
+			}
+			w.push(" IN (");
+			self.write_aggregate_subquery(w, filter);
+			w.push(")");
+		});
+	}
+
+	fn write_aggregate_subquery(
+		&self,
+		writer: &mut SqlWriter,
+		filter: &AggregateFilter,
+	) {
+		writer.push("SELECT ");
+		for (idx, col) in filter.columns.iter().enumerate() {
+			if idx > 0 {
+				writer.push(", ");
+			}
+			writer.push(&format!(r#""{}"."{}""#, self.table, col));
+		}
+		writer.push(" FROM ");
+		writer.push(self.table);
+
+		if let Some(js) = &self.joins {
+			for path in js {
+				push_join_path_inline(
+					writer.query_builder_mut(),
+					path,
+					self.table,
+				);
+			}
+		}
+
+		self.write_subquery_filters(writer);
+		self.write_subquery_group_by(writer, filter);
+		self.write_subquery_having(writer, filter);
+	}
+
+	fn write_subquery_filters(&self, writer: &mut SqlWriter) {
+		let mut has_clause = false;
+
+		if !self.include_deleted {
+			if let Some(delete_field) = self.delete_marker_field {
+				writer.push(" WHERE ");
+				writer.push(&format!(
+					r#""{}"."{}" IS NULL"#,
+					self.table, delete_field
+				));
+				has_clause = true;
+			}
+		}
+
+		if let Some(expr) = &self.where_expr {
+			if has_clause {
+				writer.push(" AND (");
+			} else {
+				writer.push(" WHERE (");
+			}
+			expr.write(writer);
+			writer.push(")");
+			has_clause = true;
+		}
+
+		if let Some(fts) = &self.full_text_search {
+			if has_clause {
+				writer.push(" AND (");
+			} else {
+				writer.push(" WHERE (");
+			}
+			fts.write_condition(writer, self.table, self.joins.as_deref());
+			writer.push(")");
+		}
+	}
+
+	fn write_subquery_group_by(
+		&self,
+		writer: &mut SqlWriter,
+		filter: &AggregateFilter,
+	) {
+		writer.push(" GROUP BY ");
+		for (idx, col) in filter.columns.iter().enumerate() {
+			if idx > 0 {
+				writer.push(", ");
+			}
+			writer.push(&format!(r#""{}"."{}""#, self.table, col));
+		}
+	}
+
+	fn write_subquery_having(
+		&self,
+		writer: &mut SqlWriter,
+		filter: &AggregateFilter,
+	) {
+		if filter.predicates.is_empty() {
+			return;
+		}
+
+		let aliases = build_alias_lookup(self.joins.as_deref());
+		writer.push(" HAVING ");
+		for (idx, predicate) in filter.predicates.iter().enumerate() {
+			if idx > 0 {
+				writer.push(" AND ");
+			}
+			write_having_predicate(predicate, writer, self.table, &aliases);
+		}
+	}
+
 	fn to_query_builder(
 		&self,
 		select_type: SelectType,
@@ -294,8 +453,12 @@ where
 		}
 
 		self.push_where_clause(&mut w);
-		self.push_group_by_clause(&mut w);
-		self.push_having_clause(&mut w);
+		if let Some(filter) = &self.aggregate_filter {
+			self.push_aggregate_filter_clause(&mut w, filter);
+		} else {
+			self.push_group_by_clause(&mut w);
+			self.push_having_clause(&mut w);
+		}
 
 		if let Some(s) = &self.sort_expr {
 			w.push_sort(s);
@@ -643,6 +806,41 @@ where
 	}
 }
 
+fn push_join_path_inline(
+	qb: &mut sqlx::QueryBuilder<'static, Postgres>,
+	path: &JoinPath,
+	base_table: &str,
+) {
+	if path.is_empty() {
+		return;
+	}
+
+	let mut left_alias = base_table.to_string();
+	let mut alias_prefix = String::new();
+
+	for segment in path.segments() {
+		alias_prefix.push_str(segment.descriptor.alias_segment);
+		let right_alias = alias_prefix.clone();
+		let join_word = match segment.kind {
+			JoinKind::Inner => " INNER JOIN ",
+			JoinKind::Left => " LEFT JOIN ",
+		};
+
+		let clause = format!(
+			r#"{join}{table} AS "{alias}" ON "{left}"."{left_field}" = "{alias}"."{right_field}""#,
+			join = join_word,
+			table = segment.descriptor.right_table,
+			alias = &right_alias,
+			left = &left_alias,
+			left_field = segment.descriptor.left_field,
+			right_field = segment.descriptor.right_field,
+		);
+
+		qb.push(clause);
+		left_alias = right_alias;
+	}
+}
+
 #[async_trait::async_trait]
 impl<'a, C, Row> ExecutablePlan<C> for ReadQueryPlan<'a, C, Row>
 where
@@ -778,7 +976,7 @@ where
 	}
 
 	fn build(self) -> Self::Plan {
-		ReadQueryPlan {
+		let mut plan = ReadQueryPlan {
 			joins:               self.joins,
 			where_expr:          self.where_expr,
 			sort_expr:           self.sort_expr,
@@ -790,8 +988,11 @@ where
 			group_by:            self.group_by,
 			having:              self.having,
 			full_text_search:    self.full_text_search,
+			aggregate_filter:    None,
 			row:                 PhantomData,
-		}
+		};
+		plan.compute_aggregate_filter();
+		plan
 	}
 }
 

@@ -105,7 +105,10 @@ fn web_payload_applies_joins_search_and_having() {
 		},
 		"search": { "query": "bolt", "includeRank": false },
 		"having": {
-			"count": { "gt": 5 }
+			"and": [
+				{ "count": { "gt": 5 } },
+				{ "priceSum": { "gt": 25.0 } }
+			]
 		}
 	});
 
@@ -114,7 +117,7 @@ fn web_payload_applies_joins_search_and_having() {
 
 	let plan: ReadQueryPlan<Item> =
 		QueryBuilder::<Item>::from_dto::<ItemDto>(&f).build();
-	let sql = plan.sql(SelectType::Star).normalize();
+	let sql = plan.sql(SelectType::Star).trim_start().normalize();
 
 	assert_eq!(
 		sql,
@@ -126,10 +129,14 @@ fn web_payload_applies_joins_search_and_having() {
             "material__"."supplier_id" AS "__sqlxo_material__supplier_id"
         FROM item
         LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
-        WHERE "item"."name" LIKE $1 AND ((setweight(to_tsvector('english', "item"."name"), 'A') || setweight(to_tsvector('english', "item"."description"), 'B')) @@ (websearch_to_tsquery('english', $2)))
-        HAVING COUNT(*) > $3
+        WHERE "item"."name" LIKE $1 AND ((setweight(to_tsvector('english', "item"."name"), 'A') || setweight(to_tsvector('english', "item"."description"), 'B')) @@ (websearch_to_tsquery('english', $2))) AND "item"."id" IN (SELECT "item"."id"
+            FROM item
+            LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
+            WHERE ("item"."name" LIKE $3) AND ((setweight(to_tsvector('english', "item"."name"), 'A') || setweight(to_tsvector('english', "item"."description"), 'B')) @@ (websearch_to_tsquery('english', $4)))
+            GROUP BY "item"."id"
+            HAVING COUNT(*) > $5 AND SUM("item"."price") > $6)
     "#
-		.normalize()
+			.normalize()
 	);
 }
 

@@ -429,6 +429,12 @@ async fn web_query_payload_executes_full_stack() {
 			"differentName": { "like": "%kit%" }
 		},
 		"search": { "query": "marine", "includeRank": false },
+		"having": {
+			"and": [
+				{ "count": { "gte": 1 } },
+				{ "priceSum": { "gt": 20.0 } }
+			]
+		},
 		"sort": [
 			{ "differentName": "asc" }
 		],
