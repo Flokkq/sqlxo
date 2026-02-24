@@ -3707,8 +3707,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			let nested_label = syn::LitStr::new(
 				&format!(
 					"{}FullTextSearchJoin::{}Nested",
-					struct_ident,
-					field_name_pascal
+					struct_ident, field_name_pascal
 				),
 				proc_macro2::Span::call_site(),
 			);

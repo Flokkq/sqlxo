@@ -1,10 +1,11 @@
 #![feature(inherent_associated_types)]
+#![allow(incomplete_features)]
 
-use sqlxo_macros::Query;
 use sqlx::FromRow;
+use sqlxo_macros::Query;
 
 #[derive(Debug, Clone, FromRow, Query)]
 struct Private {
-    pub name: String,
+	pub name: String,
 }
 fn main() {}

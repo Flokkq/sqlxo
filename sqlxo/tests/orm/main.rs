@@ -1,4 +1,5 @@
 #![feature(inherent_associated_types)]
+#![allow(incomplete_features)]
 
 #[cfg(not(feature = "ignore-db-tests"))]
 mod db;
