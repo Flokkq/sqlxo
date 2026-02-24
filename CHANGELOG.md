@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.6.2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.6.1..v0.6.2) - 2026-02-24
+
+
+
+
+### 🔧Chores
+
+- Fix lint - ([7a95248](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/7a952480b7057111ba82304abaa15f9bf4fd1416))
+
+
 ## [0.6.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.6.0..v0.6.1) - 2026-02-24
 
 
@@ -8,6 +18,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.6.1 - ([4c2b272](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/4c2b2721086412776f797ecd89703927c125e313))
 - Lint fixes - ([a776fb2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/a776fb2af5dd3db39785a0491afcebb19acf47c0))
 
 
