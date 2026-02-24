@@ -15,8 +15,6 @@ use crate::{
 		WebAggregateExpression,
 		WebExpression,
 		WebFilter,
-		WebJoinKind,
-		WebJoinPath,
 		WebSearch,
 	},
 	DeleteQueryBuilder,
@@ -32,6 +30,7 @@ use sqlxo_traits::{
 	JoinPath,
 	QueryContext,
 	WebJoinGraph,
+	WebJoinPayload,
 	WebQueryModel,
 };
 
@@ -75,25 +74,17 @@ fn collect_having_predicates<C, D>(
 	}
 }
 
-fn join_kind_from(kind: WebJoinKind) -> JoinKind {
-	match kind {
-		WebJoinKind::Inner => JoinKind::Inner,
-		WebJoinKind::Left => JoinKind::Left,
-	}
-}
-
-fn resolve_web_join<C>(join: &WebJoinPath) -> JoinPath
+fn resolve_web_join<C>(segments: &[String]) -> JoinPath
 where
 	C: QueryContext,
 	C::Model: WebJoinGraph,
 {
-	let segments: Vec<&str> = join.path.iter().map(String::as_str).collect();
-	let kind = join_kind_from(join.kind);
-	<C::Model as WebJoinGraph>::resolve_join_path(&segments, kind)
+	let refs: Vec<&str> = segments.iter().map(String::as_str).collect();
+	<C::Model as WebJoinGraph>::resolve_join_path(&refs, JoinKind::Left)
 		.unwrap_or_else(|| {
 			panic!(
 				"invalid join path {:?} for model {}",
-				join.path,
+				segments,
 				std::any::type_name::<C::Model>()
 			);
 		})
@@ -218,11 +209,17 @@ where
 	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
 {
 	fn new(filter: &WebFilter<D>) -> Self {
-		let joins = filter.joins.as_ref().map(|paths| {
-			paths
-				.iter()
-				.map(|path| resolve_web_join::<C>(path))
-				.collect()
+		let joins = filter.joins.as_ref().map(|nodes| {
+			let mut resolved = Vec::new();
+			for node in nodes {
+				let mut prefix = Vec::new();
+				let mut flattened: Vec<Vec<String>> = Vec::new();
+				node.inner().flatten(&mut prefix, &mut flattened);
+				for segments in flattened {
+					resolved.push(resolve_web_join::<C>(&segments));
+				}
+			}
+			resolved
 		});
 
 		let filter_expr = filter.filter.as_ref().map(map_expr::<C, D>);

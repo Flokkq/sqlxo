@@ -73,6 +73,28 @@ impl Default for Item {
 }
 
 #[allow(dead_code)]
+#[bind(Supplier)]
+#[derive(Debug, Clone, Deserialize, Serialize, WebQuery)]
+pub struct SupplierDto {
+	pub id:   Uuid,
+	pub name: String,
+}
+
+#[allow(dead_code)]
+#[bind(Material)]
+#[derive(Debug, Clone, Deserialize, WebQuery, Serialize)]
+pub struct MaterialDto {
+	pub id:          Uuid,
+	pub name:        String,
+	pub description: String,
+	pub supplier_id: Option<Uuid>,
+
+	#[serde(skip_serializing_if = "Option::is_none")]
+	#[sqlxo(webquery_join)]
+	pub supplier: Option<SupplierDto>,
+}
+
+#[allow(dead_code)]
 #[bind(Item)]
 #[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]
 pub struct ItemDto {
@@ -86,33 +108,11 @@ pub struct ItemDto {
 	pub due_date:       sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
 
 	#[serde(skip_serializing_if = "Option::is_none")]
-	#[sqlxo(webquery_ignore)]
+	#[sqlxo(webquery_join)]
 	pub material: Option<MaterialDto>,
 
 	#[sqlxo(webquery_ignore)]
 	pub ignore: Vec<i32>,
-}
-
-#[allow(dead_code)]
-#[bind(Material)]
-#[derive(Debug, Clone, Deserialize, WebQuery, Serialize)]
-pub struct MaterialDto {
-	pub id:          Uuid,
-	pub name:        String,
-	pub description: String,
-	pub supplier_id: Option<Uuid>,
-
-	#[serde(skip_serializing_if = "Option::is_none")]
-	#[sqlxo(webquery_ignore)]
-	pub supplier: Option<SupplierDto>,
-}
-
-#[allow(dead_code)]
-#[bind(Supplier)]
-#[derive(Debug, Clone, Deserialize, Serialize, WebQuery)]
-pub struct SupplierDto {
-	pub id:   Uuid,
-	pub name: String,
 }
 
 #[allow(dead_code)]

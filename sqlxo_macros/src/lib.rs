@@ -25,6 +25,7 @@ use syn::{
 	DeriveInput,
 	Error,
 	Fields,
+	GenericArgument,
 	Ident,
 	Lit,
 	Meta,
@@ -57,6 +58,15 @@ struct MarkerFields {
 	delete_marker: Option<String>,
 	update_marker: Option<String>,
 	insert_marker: Option<String>,
+}
+
+struct JoinFieldInfo {
+	variant_ident:      syn::Ident,
+	wrapper_ident:      syn::Ident,
+	field_ident:        syn::Ident,
+	json_name:          syn::LitStr,
+	friendly_name:      syn::LitStr,
+	child_join_path_ty: syn::Type,
 }
 
 impl MarkerFields {
@@ -659,6 +669,49 @@ fn extract_join_value_inner(ty: &syn::Type) -> Option<syn::Type> {
 			None
 		}
 		_ => None,
+	}
+}
+
+fn extract_join_target_type(ty: &syn::Type) -> Option<syn::Type> {
+	match ty {
+		syn::Type::Path(type_path) => {
+			let segment = type_path.path.segments.last()?;
+			if segment.ident == "Option" {
+				if let syn::PathArguments::AngleBracketed(args) =
+					&segment.arguments
+				{
+					if let Some(GenericArgument::Type(inner)) =
+						args.args.first()
+					{
+						return Some(inner.clone());
+					}
+				}
+				None
+			} else {
+				Some(ty.clone())
+			}
+		}
+		_ => None,
+	}
+}
+
+fn derive_join_path_type(ty: &syn::Type) -> syn::Type {
+	match ty {
+		syn::Type::Path(type_path) => {
+			let mut path = type_path.path.clone();
+			if let Some(last) = path.segments.last_mut() {
+				let new_ident =
+					format_ident!("{}JoinPath", last.ident.to_string());
+				last.ident = new_ident;
+				syn::Type::Path(syn::TypePath {
+					qself: type_path.qself.clone(),
+					path,
+				})
+			} else {
+				syn::parse_quote!(#ty)
+			}
+		}
+		_ => syn::parse_quote!(#ty),
 	}
 }
 
@@ -1836,6 +1889,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 
 	let leaf_ident = format_ident!("{}Leaf", struct_ident);
 	let sort_field_ident = format_ident!("{}SortField", struct_ident);
+	let join_path_ident = format_ident!("{}JoinPath", struct_ident);
 
 	let mut op_defs = Vec::new();
 	let mut leaf_structs = Vec::new();
@@ -1845,6 +1899,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 	let mut agg_extra_op_defs = Vec::new();
 	let mut agg_extra_structs = Vec::new();
 	let mut agg_leaf_variants = Vec::new();
+	let mut join_field_infos = Vec::new();
 	let agg_leaf_ident = format_ident!("{}AggregateLeaf", struct_ident);
 	let agg_count_struct = format_ident!("{}AggregateCount", struct_ident);
 	let agg_count_op_ident = format_ident!("{}AggregateCountOp", struct_ident);
@@ -1867,6 +1922,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 
 		let mut webquery_ignore = false;
 		let mut bool_field: Option<String> = None;
+		let mut webquery_join: Option<String> = None;
 
 		for attr in &f.attrs {
 			if attr.path.is_ident("sqlxo") {
@@ -1878,7 +1934,30 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 							{
 								webquery_ignore = true;
 							}
-
+							NestedMeta::Meta(Meta::NameValue(nv))
+								if nv.path.is_ident("webquery_join") =>
+							{
+								match nv.lit {
+									Lit::Str(ref s) => {
+										webquery_join = Some(s.value());
+										webquery_ignore = true;
+									}
+									other => {
+										return Error::new_spanned(
+											other,
+											r#"expected string literal: #[sqlxo(webquery_join = "material")]"#,
+										)
+										.to_compile_error()
+										.into();
+									}
+								}
+							}
+							NestedMeta::Meta(Meta::Path(p))
+								if p.is_ident("webquery_join") =>
+							{
+								webquery_join = Some(fname_snake.clone());
+								webquery_ignore = true;
+							}
 							NestedMeta::Meta(Meta::NameValue(nv))
 								if nv.path.is_ident("bool_from_nullable") =>
 							{
@@ -1892,6 +1971,40 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 					}
 				}
 			}
+		}
+
+		if let Some(join_label) = webquery_join {
+			let join_ty = match extract_join_target_type(ty) {
+				Some(inner) => inner,
+				None => {
+					return Error::new_spanned(
+						ty,
+						"`#[sqlxo(webquery_join)]` fields must be `Option<T>` \
+						 or plain `T` pointing to another WebQuery DTO",
+					)
+					.to_compile_error()
+					.into();
+				}
+			};
+
+			let variant_ident = format_ident!("{}", fname_pascal);
+			let wrapper_ident =
+				format_ident!("{}Join{}", struct_ident, fname_pascal);
+			let friendly_lit =
+				syn::LitStr::new(&join_label, proc_macro2::Span::call_site());
+			let field_ident = fname_ident.clone();
+			let child_join_path_ty = derive_join_path_type(&join_ty);
+
+			join_field_infos.push(JoinFieldInfo {
+				variant_ident,
+				wrapper_ident,
+				field_ident,
+				json_name: field_json_lit.clone(),
+				friendly_name: friendly_lit,
+				child_join_path_ty,
+			});
+
+			continue;
 		}
 
 		if webquery_ignore {
@@ -2111,6 +2224,90 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		}
 	}
 
+	let (join_type_tokens, join_path_ty) = if join_field_infos.is_empty() {
+		(
+			quote! {
+				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+				pub enum #join_path_ident {
+					#[doc(hidden)]
+					__SqlxoNever,
+				}
+
+				impl #root::WebJoinPayload for #join_path_ident {
+					fn flatten(&self, _prefix: &mut Vec<String>, _out: &mut Vec<Vec<String>>) {
+						match self {
+							Self::__SqlxoNever => panic!(
+								"{} has no configurable joins",
+								stringify!(#struct_ident)
+							),
+						}
+					}
+				}
+			},
+			quote! { #join_path_ident },
+		)
+	} else {
+		let join_structs = join_field_infos.iter().map(|info| {
+			let wrapper_ident = &info.wrapper_ident;
+			let field_ident = &info.field_ident;
+			let json_name = &info.json_name;
+			let child_join_ty = &info.child_join_path_ty;
+			quote! {
+				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+				pub struct #wrapper_ident {
+					#[serde(rename = #json_name)]
+					pub #field_ident: Option<Vec<#child_join_ty>>,
+				}
+			}
+		});
+
+		let join_variants = join_field_infos.iter().map(|info| {
+			let variant_ident = &info.variant_ident;
+			let wrapper_ident = &info.wrapper_ident;
+			quote! { #variant_ident(#wrapper_ident) }
+		});
+
+		let join_match_arms = join_field_infos.iter().map(|info| {
+			let variant_ident = &info.variant_ident;
+			let field_ident = &info.field_ident;
+			let friendly = &info.friendly_name;
+			quote! {
+				Self::#variant_ident(node) => {
+					prefix.push(#friendly.to_string());
+					if let Some(children) = &node.#field_ident {
+						for child in children {
+							child.flatten(prefix, out);
+						}
+					} else {
+						out.push(prefix.clone());
+					}
+					prefix.pop();
+				}
+			}
+		});
+
+		(
+			quote! {
+				#(#join_structs)*
+
+				#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+				#[serde(untagged)]
+				pub enum #join_path_ident {
+					#(#join_variants),*
+				}
+
+				impl #root::WebJoinPayload for #join_path_ident {
+					fn flatten(&self, prefix: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
+						match self {
+							#(#join_match_arms),*
+						}
+					}
+				}
+			},
+			quote! { #join_path_ident },
+		)
+	};
+
 	let out = quote! {
 
 		#(#op_defs)*
@@ -2164,11 +2361,14 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		}
 
 
-		impl #root::WebQueryModel for #struct_ident {
-			type Leaf      = #leaf_ident;
-			type SortField = #sort_field_ident;
-			type AggregateLeaf = #agg_leaf_ident;
-		}
+	#join_type_tokens
+
+	impl #root::WebQueryModel for #struct_ident {
+		type Leaf      = #leaf_ident;
+		type SortField = #sort_field_ident;
+		type AggregateLeaf = #agg_leaf_ident;
+		type JoinPath = #join_path_ty;
+	}
 
 	};
 
@@ -2537,6 +2737,11 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 						{
 							webquery_ignore = true;
 						}
+						NestedMeta::Meta(Meta::Path(p))
+							if p.is_ident("webquery_join") =>
+						{
+							webquery_ignore = true;
+						}
 						// optional: #[sqlxo(webquery_ignore = true)]
 						NestedMeta::Meta(Meta::NameValue(nv))
 							if nv.path.is_ident("webquery_ignore") =>
@@ -2552,6 +2757,11 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 									.into();
 								}
 							}
+						}
+						NestedMeta::Meta(Meta::NameValue(nv))
+							if nv.path.is_ident("webquery_join") =>
+						{
+							webquery_ignore = true;
 						}
 						NestedMeta::Meta(Meta::NameValue(nv)) => {
 							return Error::new_spanned(

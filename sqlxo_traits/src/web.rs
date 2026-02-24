@@ -39,10 +39,17 @@ impl<T> WebSortField for T where
 {
 }
 
+pub trait WebJoinPayload:
+	Clone + Send + Sync + Serialize + ToSchema + PartialSchema
+{
+	fn flatten(&self, prefix: &mut Vec<String>, out: &mut Vec<Vec<String>>);
+}
+
 pub trait WebQueryModel {
 	type Leaf: WebLeaf;
 	type SortField: WebSortField;
 	type AggregateLeaf: WebLeaf;
+	type JoinPath: WebJoinPayload + for<'de> Deserialize<'de>;
 }
 
 pub trait Bind<C>: WebQueryModel

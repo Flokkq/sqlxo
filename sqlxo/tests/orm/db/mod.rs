@@ -423,7 +423,9 @@ async fn web_query_payload_executes_full_stack() {
 
 	let payload = json!({
 		"joins": [
-			{ "path": ["material", "supplier"], "kind": "left" }
+			{ "material": [
+				{ "supplier": null }
+			]}
 		],
 		"filter": {
 			"differentName": { "like": "%kit%" }

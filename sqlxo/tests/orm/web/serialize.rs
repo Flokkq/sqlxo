@@ -105,7 +105,7 @@ fn query_builder_from_web_query_filter() {
 fn web_payload_applies_joins_search_and_having() {
 	let json: Value = json!({
 		"joins": [
-			{ "path": ["material"], "kind": "left" }
+			{ "material": null }
 		],
 		"filter": {
 			"differentName": { "like": "%Sternlampe%" }
@@ -153,7 +153,9 @@ fn web_payload_applies_joins_search_and_having() {
 fn web_payload_supports_nested_join_paths() {
 	let json: Value = json!({
 		"joins": [
-			{ "path": ["material", "supplier"], "kind": "inner" }
+			{ "material": [
+				{ "supplier": null }
+			]}
 		]
 	});
 
@@ -178,8 +180,8 @@ fn web_payload_supports_nested_join_paths() {
             "material__supplier__"."id" AS "__sqlxo_material__supplier__id",
             "material__supplier__"."name" AS "__sqlxo_material__supplier__name"
         FROM item
-        INNER JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
-        INNER JOIN supplier AS "material__supplier__" ON "material__"."supplier_id" = "material__supplier__"."id"
+        LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
+        LEFT JOIN supplier AS "material__supplier__" ON "material__"."supplier_id" = "material__supplier__"."id"
     "#
 		.normalize()
 	);
@@ -201,9 +203,9 @@ fn web_query_into_update_builds_sql() {
 
 	let plan =
 		QueryBuilder::<UpdateItem>::from_web_query::<UpdateItemDto>(&filter)
-		.into_update()
-		.model(update)
-		.build();
+			.into_update()
+			.model(update)
+			.build();
 
 	assert_eq!(
 		plan.sql().normalize(),
@@ -220,10 +222,11 @@ fn web_query_into_delete_builds_sql() {
 	let filter: WebFilter<HardDeleteItemDto> =
 		serde_json::from_value(json).expect("valid HardDeleteItemDto filter");
 
-	let plan =
-		QueryBuilder::<HardDeleteItem>::from_web_query::<HardDeleteItemDto>(&filter)
-		.into_delete()
-		.build();
+	let plan = QueryBuilder::<HardDeleteItem>::from_web_query::<
+		HardDeleteItemDto,
+	>(&filter)
+	.into_delete()
+	.build();
 
 	assert_eq!(
 		plan.sql().normalize(),
@@ -241,7 +244,7 @@ fn web_query_update_rejects_having() {
 
 	let result = std::panic::catch_unwind(|| {
 		let _ = QueryBuilder::<UpdateItem>::from_web_query::<UpdateItemDto>(
-			&filter
+			&filter,
 		)
 		.into_update();
 	});

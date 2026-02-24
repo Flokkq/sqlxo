@@ -4,6 +4,7 @@ use serde::{
 };
 use sqlxo_traits::{
 	QueryContext,
+	WebJoinPayload,
 	WebLeaf,
 	WebQueryModel,
 	WebSortField,
@@ -25,16 +26,18 @@ pub use page::{
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
 #[serde(bound(deserialize = "Q: WebLeaf + Deserialize<'de>, S: \
                              WebSortField + Deserialize<'de>, A: WebLeaf + \
+                             Deserialize<'de>, J: WebJoinPayload + \
                              Deserialize<'de>"))]
 #[into_params(parameter_in = Query)]
-pub struct GenericWebFilter<Q, S, A>
+pub struct GenericWebFilter<Q, S, A, J>
 where
 	Q: WebLeaf + Serialize,
 	S: WebSortField + Serialize,
 	A: WebLeaf + Serialize,
+	J: WebJoinPayload + Serialize,
 {
 	#[schema(nullable)]
-	pub joins:  Option<Vec<WebJoinPath>>,
+	pub joins:  Option<Vec<JoinPayload<J>>>,
 	#[schema(no_recursion, nullable)]
 	pub filter: Option<GenericWebExpression<Q>>,
 	#[schema(no_recursion, nullable)]
@@ -73,21 +76,6 @@ where
 	S: WebSortField + Serialize;
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
-pub struct WebJoinPath {
-	pub path: Vec<String>,
-	pub kind: WebJoinKind,
-}
-
-#[derive(
-	Clone, Copy, Serialize, Deserialize, ToSchema, Debug, PartialEq, Eq,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum WebJoinKind {
-	Inner,
-	Left,
-}
-
-#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearch {
 	pub query:        String,
@@ -105,6 +93,7 @@ pub type WebFilter<T> = GenericWebFilter<
 	<T as WebQueryModel>::Leaf,
 	<T as WebQueryModel>::SortField,
 	<T as WebQueryModel>::AggregateLeaf,
+	<T as WebQueryModel>::JoinPath,
 >;
 
 pub trait AggregateBindable<C>: WebQueryModel
@@ -114,4 +103,23 @@ where
 	fn map_aggregate_leaf(
 		leaf: &<Self as WebQueryModel>::AggregateLeaf,
 	) -> HavingPredicate;
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
+pub enum NoJoins {}
+
+impl WebJoinPayload for NoJoins {
+	fn flatten(&self, _prefix: &mut Vec<String>, _out: &mut Vec<Vec<String>>) {
+		match *self {}
+	}
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
+#[serde(transparent)]
+pub struct JoinPayload<J>(pub J);
+
+impl<J> JoinPayload<J> {
+	pub fn inner(&self) -> &J {
+		&self.0
+	}
 }
