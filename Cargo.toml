@@ -1,5 +1,4 @@
 [workspace.package]
-name = "sqxlo workspace"
 version = "0.5.8"
 edition = "2021"
 authors = ["Flokkq <webcla21@htl-kaindorf.at>"]

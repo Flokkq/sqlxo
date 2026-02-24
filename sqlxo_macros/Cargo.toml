@@ -7,8 +7,6 @@ license = { workspace = true }
 repository = { workspace = true }
 description = "internal: proc-macros for sqlxo"
 
-crate-type = ["proc-macro", "rlib"]
-
 [lib]
 proc-macro = true
 

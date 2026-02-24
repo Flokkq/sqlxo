@@ -167,6 +167,14 @@ impl Default for HardDeleteItem {
 	}
 }
 
+#[allow(dead_code)]
+#[bind(HardDeleteItem)]
+#[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]
+pub struct HardDeleteItemDto {
+	pub id:   Uuid,
+	pub name: String,
+}
+
 // Soft delete test model
 #[allow(dead_code)]
 #[derive(Debug, FromRow, Clone, Query, SoftDelete, PartialEq)]
@@ -222,6 +230,16 @@ impl Default for UpdateItem {
 			updated_at:    None,
 		}
 	}
+}
+
+#[allow(dead_code)]
+#[bind(UpdateItem)]
+#[derive(Debug, Clone, WebQuery, Deserialize, Serialize)]
+pub struct UpdateItemDto {
+	pub id:          Uuid,
+	pub name:        String,
+	pub description: String,
+	pub price:       f32,
 }
 
 #[allow(dead_code)]

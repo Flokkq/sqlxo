@@ -38,10 +38,11 @@ fn dto_filter_combined_with_inline_filter() {
 		serde_json::from_value(json).expect("invalid ItemDtoFilter");
 
 	let plan: ReadQueryPlan<Item> =
-		QueryBuilder::<Item>::from_dto::<ItemDto>(&f)
-			.r#where(and![ItemQuery::NameIsNull, ItemQuery::AmountEq(1000)])
-			.order_by(order_by![ItemSort::ByNameAsc])
-			.build();
+		QueryBuilder::<Item>::from_web_query::<ItemDto>(&f)
+		.into_read()
+		.r#where(and![ItemQuery::NameIsNull, ItemQuery::AmountEq(1000)])
+		.order_by(order_by![ItemSort::ByNameAsc])
+		.build();
 
 	assert_eq!(
 		plan.sql(SelectType::Star).trim_start().normalize(),

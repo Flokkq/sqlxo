@@ -444,7 +444,8 @@ async fn web_query_payload_executes_full_stack() {
 	let filter: WebFilter<ItemDto> =
 		serde_json::from_value(payload).expect("valid filter");
 
-	let rows = QueryBuilder::<Item>::from_dto::<ItemDto>(&filter)
+	let rows = QueryBuilder::<Item>::from_web_query::<ItemDto>(&filter)
+		.into_read()
 		.build()
 		.fetch_all(&pool)
 		.await

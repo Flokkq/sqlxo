@@ -19,8 +19,10 @@ use crate::{
 		WebJoinPath,
 		WebSearch,
 	},
+	DeleteQueryBuilder,
 	QueryBuilder,
 	ReadQueryBuilder,
+	UpdateQueryBuilder,
 };
 use sqlxo_traits::{
 	Bind,
@@ -147,51 +149,248 @@ impl<'a, C> QueryBuilder<C>
 where
 	C: QueryContext,
 {
-	pub fn from_dto<D>(dto: &WebFilter<D>) -> ReadQueryBuilder<'a, C>
+	pub fn from_web_query<D>(dto: &WebFilter<D>) -> WebQueryAdapter<'a, C, D>
 	where
 		D: WebQueryModel + Bind<C> + AggregateBindable<C>,
 	{
-		let mut qb = QueryBuilder::<C>::read();
-
-		if let Some(joins) = dto.joins.as_ref() {
-			for join in joins {
-				let path = resolve_web_join::<C>(join);
-				qb = qb.join_path(path);
-			}
+		let parsed = ParsedWebQuery::new(dto);
+		WebQueryAdapter {
+			parsed,
+			_marker: std::marker::PhantomData,
 		}
-
-		if let Some(f) = &dto.filter {
-			let expr = map_expr::<C, D>(f);
-			qb = qb.r#where(expr);
-		}
-
-		if let Some(search) = &dto.search {
-			qb = <SearchBridge<C> as SearchApplier<'a, C>>::apply(qb, search);
-		}
-
-		if let Some(having_expr) = &dto.having {
-			let mut preds = Vec::new();
-			collect_having_predicates::<C, D>(having_expr, &mut preds);
-			if !preds.is_empty() {
-				qb = qb.having(HavingList::new(preds));
-			}
-		}
-
-		if let Some(sorts_in) = dto.sort.as_ref().filter(|s| !s.is_empty()) {
-			let sorts: Vec<C::Sort> = sorts_in
-				.iter()
-				.map(|s| <D as Bind<C>>::map_sort_field(&s.0))
-				.collect();
-			qb = qb.order_by(SortOrder::from(sorts));
-		}
-
-		if let Some(p) = dto.page {
-			qb = qb.paginate(Pagination {
-				page:      p.page,
-				page_size: p.page_size,
-			});
-		}
-
-		qb
 	}
+}
+
+pub struct WebQueryAdapter<'a, C, D>
+where
+	C: QueryContext,
+	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
+{
+	parsed:  ParsedWebQuery<C, D>,
+	_marker: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a, C, D> WebQueryAdapter<'a, C, D>
+where
+	C: QueryContext,
+	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
+{
+	pub fn into_read(self) -> ReadQueryBuilder<'a, C>
+	where
+		C::Model: crate::GetDeleteMarker + sqlxo_traits::JoinNavigationModel,
+	{
+		self.parsed.into_read_builder()
+	}
+
+	pub fn into_update(self) -> UpdateQueryBuilder<'a, C>
+	where
+		C::Model: crate::Updatable,
+	{
+		self.parsed.into_update_builder()
+	}
+
+	pub fn into_delete(self) -> DeleteQueryBuilder<'a, C>
+	where
+		C::Model: crate::Deletable,
+	{
+		self.parsed.into_delete_builder()
+	}
+}
+
+#[derive(Clone)]
+struct ParsedWebQuery<C, D>
+where
+	C: QueryContext,
+	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
+{
+	joins:       Option<Vec<JoinPath>>,
+	filter_expr: Option<Expression<C::Query>>,
+	sort_expr:   Option<SortOrder<C::Sort>>,
+	pagination:  Option<Pagination>,
+	search:      Option<WebSearch>,
+	having:      Option<Vec<crate::select::HavingPredicate>>,
+	_marker:     std::marker::PhantomData<D>,
+}
+
+impl<C, D> ParsedWebQuery<C, D>
+where
+	C: QueryContext,
+	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
+{
+	fn new(filter: &WebFilter<D>) -> Self {
+		let joins = filter.joins.as_ref().map(|paths| {
+			paths
+				.iter()
+				.map(|path| resolve_web_join::<C>(path))
+				.collect()
+		});
+
+		let filter_expr = filter.filter.as_ref().map(map_expr::<C, D>);
+
+		let sort_expr = filter
+			.sort
+			.as_ref()
+			.and_then(|sorts| if sorts.is_empty() { None } else { Some(sorts) })
+			.map(|sorts| {
+				let entries: Vec<C::Sort> = sorts
+					.iter()
+					.map(|s| <D as Bind<C>>::map_sort_field(&s.0))
+					.collect();
+				SortOrder::from(entries)
+			});
+
+		let pagination = filter.page.map(|p| Pagination {
+			page:      p.page,
+			page_size: p.page_size,
+		});
+		let search = filter.search.clone();
+		let having = filter.having.as_ref().map(|expr| {
+			let mut preds = Vec::new();
+			collect_having_predicates::<C, D>(expr, &mut preds);
+			preds
+		});
+
+		Self {
+			joins,
+			filter_expr,
+			sort_expr,
+			pagination,
+			search,
+			having,
+			_marker: std::marker::PhantomData,
+		}
+	}
+
+	fn into_read_builder<'a>(self) -> ReadQueryBuilder<'a, C>
+	where
+		C::Model: crate::GetDeleteMarker + sqlxo_traits::JoinNavigationModel,
+	{
+		let ParsedWebQuery {
+			joins,
+			filter_expr,
+			sort_expr,
+			pagination,
+			search,
+			having,
+			..
+		} = self;
+
+		let mut builder = QueryBuilder::<C>::read();
+
+		if let Some(joins) = joins {
+			for path in joins {
+				builder = builder.join_path(path);
+			}
+		}
+
+		if let Some(expr) = filter_expr {
+			builder = builder.r#where(expr);
+		}
+
+		if let Some(search) = search {
+			builder = <SearchBridge<C> as SearchApplier<'a, C>>::apply(
+				builder, &search,
+			);
+		}
+
+		if let Some(preds) = having {
+			if !preds.is_empty() {
+				builder = builder.having(HavingList::new(preds));
+			}
+		}
+
+		if let Some(sort) = sort_expr {
+			builder = builder.order_by(sort);
+		}
+
+		if let Some(page) = pagination {
+			builder = builder.paginate(page);
+		}
+
+		builder
+	}
+
+	fn into_update_builder<'a>(self) -> UpdateQueryBuilder<'a, C>
+	where
+		C::Model: crate::Updatable,
+	{
+		let ParsedWebQuery {
+			filter_expr,
+			joins,
+			search,
+			having,
+			..
+		} = self;
+		Self::assert_mutation_support(
+			"update",
+			joins.is_some(),
+			search.is_some(),
+			has_having(&having),
+		);
+		let mut builder = QueryBuilder::<C>::update();
+		if let Some(expr) = filter_expr {
+			builder = builder.r#where(expr);
+		}
+		builder
+	}
+
+	fn into_delete_builder<'a>(self) -> DeleteQueryBuilder<'a, C>
+	where
+		C::Model: crate::Deletable,
+	{
+		let ParsedWebQuery {
+			filter_expr,
+			joins,
+			search,
+			having,
+			..
+		} = self;
+		Self::assert_mutation_support(
+			"delete",
+			joins.is_some(),
+			search.is_some(),
+			has_having(&having),
+		);
+		let mut builder = QueryBuilder::<C>::delete();
+		if let Some(expr) = filter_expr {
+			builder = builder.r#where(expr);
+		}
+		builder
+	}
+
+	fn assert_mutation_support(
+		op: &str,
+		has_joins: bool,
+		has_search: bool,
+		has_having: bool,
+	) {
+		if has_joins {
+			panic!(
+				"webquery joins are only supported for read operations \
+				 (attempted {})",
+				op
+			);
+		}
+		if has_search {
+			panic!(
+				"full-text search filters are only supported for read \
+				 operations (attempted {})",
+				op
+			);
+		}
+		if has_having {
+			panic!(
+				"HAVING/aggregate filters are only supported for read \
+				 operations (attempted {})",
+				op
+			);
+		}
+	}
+}
+
+fn has_having(having: &Option<Vec<crate::select::HavingPredicate>>) -> bool {
+	having
+		.as_ref()
+		.map(|preds| !preds.is_empty())
+		.unwrap_or(false)
 }

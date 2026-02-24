@@ -2034,9 +2034,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		let field_json_name_clone = field_json_name.clone();
 		let fname_ident_clone = fname_ident.clone();
 		let mut add_aggregate =
-			|suffix_pascal: &str,
-			 suffix_snake: &str,
-			 value_ty: syn::Type| {
+			|suffix_pascal: &str, suffix_snake: &str, value_ty: syn::Type| {
 				let wrap_ident = format_ident!(
 					"{}Aggregate{}{}",
 					struct_ident,
@@ -2088,26 +2086,10 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 
 		match classify_type(ty) {
 			Kind::Number => {
-				add_aggregate(
-					"Sum",
-					"sum",
-					ty.clone(),
-				);
-				add_aggregate(
-					"Avg",
-					"avg",
-					ty.clone(),
-				);
-				add_aggregate(
-					"Min",
-					"min",
-					ty.clone(),
-				);
-				add_aggregate(
-					"Max",
-					"max",
-					ty.clone(),
-				);
+				add_aggregate("Sum", "sum", ty.clone());
+				add_aggregate("Avg", "avg", ty.clone());
+				add_aggregate("Min", "min", ty.clone());
+				add_aggregate("Max", "max", ty.clone());
 				add_aggregate(
 					"CountDistinct",
 					"count_distinct",
@@ -2115,16 +2097,8 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 				);
 			}
 			Kind::DateTime | Kind::Date | Kind::Time => {
-				add_aggregate(
-					"Min",
-					"min",
-					ty.clone(),
-				);
-				add_aggregate(
-					"Max",
-					"max",
-					ty.clone(),
-				);
+				add_aggregate("Min", "min", ty.clone());
+				add_aggregate("Max", "max", ty.clone());
 			}
 			Kind::UuidOrScalarEq | Kind::String => {
 				add_aggregate(
