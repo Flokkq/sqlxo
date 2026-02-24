@@ -148,7 +148,7 @@ impl<Output> SelectionList<Output, SelectionColumn> {
 			if idx > 0 {
 				qb.push(", ");
 			}
-			qb.push(&format!(r#""{}"."{}""#, table, col.column));
+			qb.push(format!(r#""{}"."{}""#, table, col.column));
 		}
 	}
 }
@@ -317,12 +317,24 @@ impl CountAllExpr {
 	}
 }
 
+impl Default for CountAllExpr {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 #[derive(Clone, Copy)]
 pub struct CountExpr<C: Column>(PhantomData<C>);
 
 impl<C: Column> CountExpr<C> {
 	pub const fn new() -> Self {
 		Self(PhantomData)
+	}
+}
+
+impl<C: Column> Default for CountExpr<C> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
@@ -335,12 +347,24 @@ impl<C: Column> CountDistinctExpr<C> {
 	}
 }
 
+impl<C: Column> Default for CountDistinctExpr<C> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 #[derive(Clone, Copy)]
 pub struct SumExpr<C: Column>(PhantomData<C>);
 
 impl<C: Column> SumExpr<C> {
 	pub const fn new() -> Self {
 		Self(PhantomData)
+	}
+}
+
+impl<C: Column> Default for SumExpr<C> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
@@ -353,6 +377,12 @@ impl<C: Column> AvgExpr<C> {
 	}
 }
 
+impl<C: Column> Default for AvgExpr<C> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 #[derive(Clone, Copy)]
 pub struct MinExpr<C: Column>(PhantomData<C>);
 
@@ -362,12 +392,24 @@ impl<C: Column> MinExpr<C> {
 	}
 }
 
+impl<C: Column> Default for MinExpr<C> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 #[derive(Clone, Copy)]
 pub struct MaxExpr<C: Column>(PhantomData<C>);
 
 impl<C: Column> MaxExpr<C> {
 	pub const fn new() -> Self {
 		Self(PhantomData)
+	}
+}
+
+impl<C: Column> Default for MaxExpr<C> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 

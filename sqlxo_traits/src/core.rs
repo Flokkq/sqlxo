@@ -75,15 +75,6 @@ pub struct JoinPath {
 	start:    usize,
 }
 
-impl Default for JoinPath {
-	fn default() -> Self {
-		Self {
-			segments: Vec::new(),
-			start:    0,
-		}
-	}
-}
-
 impl JoinPath {
 	pub fn from_join<J: SqlJoin>(join: J, kind: JoinKind) -> Self {
 		Self::new(join.descriptor(), kind)
@@ -212,17 +203,12 @@ impl AliasedColumn {
 	}
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Default, Eq)]
 pub enum JoinValue<T> {
+	#[default]
 	NotLoaded,
 	Missing,
 	Loaded(T),
-}
-
-impl<T> Default for JoinValue<T> {
-	fn default() -> Self {
-		Self::NotLoaded
-	}
 }
 
 impl<T: Clone> Clone for JoinValue<T> {

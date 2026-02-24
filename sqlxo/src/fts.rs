@@ -88,9 +88,7 @@ pub fn nested_join_paths(
 	joins: Option<&[JoinPath]>,
 	prefix: &JoinPath,
 ) -> Option<Vec<JoinPath>> {
-	let Some(paths) = joins else {
-		return None;
-	};
+	let paths = joins?;
 
 	let prefix_len = prefix.len();
 	let mut nested: Vec<JoinPath> = Vec::new();

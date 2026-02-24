@@ -3706,9 +3706,9 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			);
 			let nested_label = syn::LitStr::new(
 				&format!(
-					"{}FullTextSearchJoin::{}",
+					"{}FullTextSearchJoin::{}Nested",
 					struct_ident,
-					format!("{}Nested", field_name_pascal)
+					field_name_pascal
 				),
 				proc_macro2::Span::call_site(),
 			);
@@ -3723,7 +3723,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			});
 		}
 
-		if fts_attr.as_ref().map_or(false, |attr| attr.ignore) {
+		if fts_attr.as_ref().is_some_and(|attr| attr.ignore) {
 			continue;
 		}
 
