@@ -30,7 +30,7 @@ pub trait SqlWrite {
 pub trait QueryContext: Send + Sync + 'static {
 	const TABLE: &'static str;
 
-	type Model: QueryModel + Send + Sync + JoinNavigationModel;
+	type Model: QueryModel + Send + Sync + JoinNavigationModel + WebJoinGraph;
 	type Query: FilterQuery + Send + Sync;
 	type Sort: QuerySort + Send + Sync;
 	type Join: SqlJoin + Send + Sync;
@@ -268,6 +268,11 @@ pub trait JoinNavigationModel {
 	) -> Result<(), sqlx::Error>;
 }
 
+pub trait WebJoinGraph {
+	fn resolve_join_path(segments: &[&str], kind: JoinKind)
+		-> Option<JoinPath>;
+}
+
 pub trait Model {}
 
 pub trait Deletable {
@@ -352,6 +357,12 @@ impl SearchWeight {
 
 pub trait FullTextSearchConfig {
 	fn include_rank(&self) -> bool;
+}
+
+pub trait FullTextSearchConfigBuilder: FullTextSearchConfig {
+	fn new_with_query(query: String) -> Self;
+	fn apply_language(self, language: Option<String>) -> Self;
+	fn apply_rank(self, include_rank: Option<bool>) -> Self;
 }
 
 pub trait FullTextSearchable: Sized {

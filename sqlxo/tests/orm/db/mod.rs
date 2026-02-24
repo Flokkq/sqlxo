@@ -6,6 +6,7 @@ use crate::helpers::{
 	SoftDeleteItemQuery,
 };
 use claims::assert_some_eq;
+use serde_json::json;
 use sqlx::migrate;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
@@ -27,6 +28,7 @@ use sqlxo::ExecutablePlan;
 use sqlxo::FetchablePlan;
 use sqlxo::QueryBuilder;
 use sqlxo::{
+	web::WebFilter,
 	JoinKind,
 	JoinValue,
 };
@@ -35,6 +37,7 @@ use uuid::Uuid;
 use crate::helpers::{
 	Item,
 	ItemColumn,
+	ItemDto,
 	ItemFullTextSearchConfig,
 	ItemFullTextSearchJoin,
 	ItemJoin,
@@ -385,6 +388,64 @@ fn full_text_search_panics_when_join_missing() {
 			.sql(SelectType::Star);
 	});
 	assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn web_query_payload_executes_full_stack() {
+	let pool = get_connection_pool().await;
+
+	let supplier = Supplier {
+		id:   Uuid::new_v4(),
+		name: "Marine Supply Co".into(),
+	};
+	insert_supplier(&supplier, &pool).await.unwrap();
+
+	let material = Material {
+		id:          Uuid::new_v4(),
+		name:        "marine alloy".into(),
+		long_name:   "premium alloy".into(),
+		description: "high grade".into(),
+		supplier_id: Some(supplier.id),
+		supplier:    JoinValue::default(),
+	};
+	insert_material(&material, &pool).await.unwrap();
+
+	let mut matching = Item::default();
+	matching.name = "premium kit".into();
+	matching.description = "marine grade kit".into();
+	matching.material_id = Some(material.id);
+	insert_item(&matching, &pool).await.unwrap();
+
+	let mut other = Item::default();
+	other.name = "spare bolts".into();
+	other.description = "misc hardware".into();
+	insert_item(&other, &pool).await.unwrap();
+
+	let payload = json!({
+		"joins": [
+			{ "path": ["material", "supplier"], "kind": "left" }
+		],
+		"filter": {
+			"differentName": { "like": "%kit%" }
+		},
+		"search": { "query": "marine", "includeRank": false },
+		"sort": [
+			{ "differentName": "asc" }
+		],
+		"page": { "pageNo": 0, "pageSize": 10 }
+	});
+
+	let filter: WebFilter<ItemDto> =
+		serde_json::from_value(payload).expect("valid filter");
+
+	let rows = QueryBuilder::<Item>::from_dto::<ItemDto>(&filter)
+		.build()
+		.fetch_all(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(rows.len(), 1);
+	assert_eq!(rows[0].id, matching.id);
 }
 
 async fn insert_hard_delete_item(

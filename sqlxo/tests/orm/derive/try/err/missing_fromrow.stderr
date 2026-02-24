@@ -32,7 +32,7 @@ help: the trait `for<'r> FromRow<'r, PgRow>` is not implemented for `T`
 note: required by a bound in `sqlxo::QueryContext::Model`
  --> $WORKSPACE/sqlxo_traits/src/core.rs
   |
-  |     type Model: QueryModel + Send + Sync + JoinNavigationModel;
+  |     type Model: QueryModel + Send + Sync + JoinNavigationModel + WebJoinGraph;
   |                 ^^^^^^^^^^ required by this bound in `QueryContext::Model`
 
 error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied

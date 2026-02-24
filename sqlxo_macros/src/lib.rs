@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 use heck::{
+	ToKebabCase,
+	ToLowerCamelCase,
 	ToPascalCase,
 	ToShoutySnakeCase,
 	ToSnakeCase,
@@ -295,6 +297,8 @@ struct FkSpec {
 	right_pk:       String,
 	alias_segment:  String,
 	variant_ident:  Ident,
+	friendly_name:  String,
+	related_ty:     Option<syn::Type>,
 	#[allow(dead_code)] // Will be used for future cascade behavior
 	cascade_type: Option<CascadeType>,
 }
@@ -367,10 +371,8 @@ fn build_join_codegen(
 			syn::LitStr::new(&right_table, proc_macro2::Span::call_site());
 		let right_field_lit =
 			syn::LitStr::new(&fk.right_pk, proc_macro2::Span::call_site());
-		let identifier_lit = syn::LitStr::new(
-			&fk.variant_ident.to_string(),
-			proc_macro2::Span::call_site(),
-		);
+		let identifier_lit =
+			syn::LitStr::new(&fk.friendly_name, proc_macro2::Span::call_site());
 
 		descriptor_arms.push(quote! {
 			Self::#var => #root::JoinDescriptor {
@@ -398,6 +400,132 @@ fn derive_alias_segment(field_name: &str) -> String {
 		base = field_name.to_string();
 	}
 	format!("{}__", base)
+}
+
+fn derive_join_label(field_name: &str) -> String {
+	if let Some(stripped) = field_name.strip_suffix("_id") {
+		if !stripped.is_empty() {
+			return stripped.to_string();
+		}
+	}
+	field_name.to_string()
+}
+
+#[derive(Clone, Copy)]
+enum RenameRule {
+	Lowercase,
+	Uppercase,
+	Pascal,
+	Camel,
+	Snake,
+	ScreamingSnake,
+	Kebab,
+	ScreamingKebab,
+	Original,
+}
+
+impl RenameRule {
+	fn apply(&self, value: &str) -> String {
+		match self {
+			Self::Lowercase => value.to_lowercase(),
+			Self::Uppercase => value.to_uppercase(),
+			Self::Pascal => value.to_pascal_case(),
+			Self::Camel => value.to_lower_camel_case(),
+			Self::Snake => value.to_snake_case(),
+			Self::ScreamingSnake => value.to_shouty_snake_case(),
+			Self::Kebab => value.to_kebab_case(),
+			Self::ScreamingKebab => value.to_kebab_case().to_uppercase(),
+			Self::Original => value.to_string(),
+		}
+	}
+}
+
+fn parse_rename_rule(value: &str) -> Option<RenameRule> {
+	match value {
+		"lowercase" => Some(RenameRule::Lowercase),
+		"UPPERCASE" => Some(RenameRule::Uppercase),
+		"PascalCase" => Some(RenameRule::Pascal),
+		"camelCase" => Some(RenameRule::Camel),
+		"snake_case" => Some(RenameRule::Snake),
+		"SCREAMING_SNAKE_CASE" => Some(RenameRule::ScreamingSnake),
+		"kebab-case" => Some(RenameRule::Kebab),
+		"SCREAMING-KEBAB-CASE" => Some(RenameRule::ScreamingKebab),
+		"none" => Some(RenameRule::Original),
+		_ => None,
+	}
+}
+
+fn container_rename_rule(attrs: &[syn::Attribute]) -> syn::Result<RenameRule> {
+	for attr in attrs {
+		if !attr.path.is_ident("serde") {
+			continue;
+		}
+
+		let meta = attr.parse_meta().map_err(|_| {
+			syn::Error::new_spanned(attr, "invalid #[serde] attribute")
+		})?;
+
+		let Meta::List(list) = meta else {
+			continue;
+		};
+
+		for nested in list.nested {
+			if let NestedMeta::Meta(Meta::NameValue(nv)) = nested {
+				if nv.path.is_ident("rename_all") {
+					if let Lit::Str(val) = nv.lit {
+						if let Some(rule) = parse_rename_rule(&val.value()) {
+							return Ok(rule);
+						}
+						return Err(syn::Error::new_spanned(
+							val,
+							"unsupported #[serde(rename_all = ...)]",
+						));
+					} else {
+						return Err(syn::Error::new_spanned(
+							nv.lit,
+							"expected string literal",
+						));
+					}
+				}
+			}
+		}
+	}
+
+	Ok(RenameRule::Camel)
+}
+
+fn field_rename(field: &syn::Field) -> syn::Result<Option<String>> {
+	for attr in &field.attrs {
+		if !attr.path.is_ident("serde") {
+			continue;
+		}
+
+		let meta = attr.parse_meta().map_err(|_| {
+			syn::Error::new_spanned(attr, "invalid #[serde] attribute")
+		})?;
+
+		let Meta::List(list) = meta else {
+			continue;
+		};
+
+		for nested in list.nested {
+			if let NestedMeta::Meta(Meta::NameValue(nv)) = nested {
+				if nv.path.is_ident("rename") {
+					if let Lit::Str(val) = nv.lit {
+						return Ok(Some(val.value()));
+					} else {
+						return Err(syn::Error::new_spanned(
+							nv.lit,
+							"expected string literal for #[serde(rename = \
+							 ...)]",
+						));
+					}
+				}
+			}
+		}
+	}
+
+	Ok(None)
 }
 
 fn has_sqlx_skip(field: &syn::Field) -> syn::Result<bool> {
@@ -801,6 +929,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				}
 
 				let alias_segment = derive_alias_segment(&field_name_snake);
+				let friendly_name = derive_join_label(&field_name_snake);
 				let right_pascal = right_table.to_pascal_case();
 				let variant_ident = format_ident!(
 					"{}To{}By{}",
@@ -815,6 +944,8 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 					right_pk,
 					alias_segment,
 					variant_ident,
+					friendly_name,
+					related_ty: None,
 					cascade_type,
 				});
 			}
@@ -1067,7 +1198,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 	for pending in pending_navigation {
 		let fk = match fks
-			.iter()
+			.iter_mut()
 			.find(|fk| fk.fk_field_snake == pending.via_field_name)
 		{
 			Some(fk) => fk,
@@ -1084,10 +1215,11 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				.into()
 			}
 		};
+		fk.related_ty = Some(pending.ty.clone());
 
 		navigation_fields.push(NavigationFieldSpec {
 			field_ident:     pending.field_ident.clone(),
-			join_identifier: fk.variant_ident.to_string(),
+			join_identifier: fk.friendly_name.clone(),
 			related_ty:      pending.ty.clone(),
 		});
 	}
@@ -1262,6 +1394,45 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			.collect();
 	let nav_flag_collect_defs = nav_flags.clone();
 	let nav_flag_hydrate_defs = nav_flags.clone();
+	let web_join_match: Vec<proc_macro2::TokenStream> = fks
+		.iter()
+		.map(|fk| {
+			let join_variant = &fk.variant_ident;
+			let friendly = syn::LitStr::new(
+				&fk.friendly_name,
+				proc_macro2::Span::call_site(),
+			);
+			match &fk.related_ty {
+				Some(ty) => {
+					quote! {
+						#friendly => {
+							if rest.is_empty() {
+								return Some(#join_ident::#join_variant.path(kind));
+							}
+							if let Some(nested) =
+								<#ty as #root::WebJoinGraph>::resolve_join_path(rest, kind)
+							{
+								let mut base = #join_ident::#join_variant.path(kind);
+								base.append(&nested);
+								return Some(base);
+							}
+							None
+						}
+					}
+				}
+				None => {
+					quote! {
+						#friendly => {
+							if rest.is_empty() {
+								return Some(#join_ident::#join_variant.path(kind));
+							}
+							None
+						}
+					}
+				}
+			}
+		})
+		.collect();
 
 	let out = quote! {
 
@@ -1432,6 +1603,19 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			}
 		}
 
+		impl #root::WebJoinGraph for #struct_ident {
+			fn resolve_join_path(
+				segments: &[&str],
+				kind: #root::JoinKind,
+			) -> Option<#root::JoinPath> {
+				let (first, rest) = segments.split_first()?;
+				match *first {
+					#(#web_join_match,)*
+					_ => None,
+				}
+			}
+		}
+
 		#[allow(non_snake_case)]
 		pub mod #column_mod_ident {
 			use super::*;
@@ -1572,6 +1756,10 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 
 	let struct_ident = &input.ident;
 	let _join_ident = format_ident!("{}Join", struct_ident);
+	let rename_rule = match container_rename_rule(&input.attrs) {
+		Ok(rule) => rule,
+		Err(e) => return e.to_compile_error().into(),
+	};
 
 	let data = match &input.data {
 		Data::Struct(s) => s,
@@ -1605,11 +1793,24 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 	let mut leaf_variants = Vec::new();
 	let mut sort_structs = Vec::new();
 	let mut sort_variants = Vec::new();
+	let agg_leaf_ident = format_ident!("{}AggregateLeaf", struct_ident);
+	let agg_count_struct = format_ident!("{}AggregateCount", struct_ident);
+	let agg_count_op_ident = format_ident!("{}AggregateCountOp", struct_ident);
+	let count_field_name = rename_rule.apply("count");
+	let count_field_lit =
+		syn::LitStr::new(&count_field_name, proc_macro2::Span::call_site());
 
 	for f in fields {
 		let fname_ident = f.ident.as_ref().unwrap();
 		let fname_snake = fname_ident.to_string();
 		let fname_pascal = fname_snake.to_pascal_case();
+		let field_json_name = match field_rename(f) {
+			Ok(Some(name)) => name,
+			Ok(None) => rename_rule.apply(&fname_snake),
+			Err(e) => return e.to_compile_error().into(),
+		};
+		let field_json_lit =
+			syn::LitStr::new(&field_json_name, proc_macro2::Span::call_site());
 		let ty = &f.ty;
 
 		let mut webquery_ignore = false;
@@ -1757,7 +1958,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		leaf_structs.push(quote! {
             #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
             pub struct #leaf_wrap_ident {
-                #[serde(rename = #fname_snake)]
+                #[serde(rename = #field_json_lit)]
                 pub #fname_ident: #op_ident,
             }
         });
@@ -1769,6 +1970,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		sort_structs.push(quote! {
             #[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
             pub struct #sort_wrap_ident {
+				#[serde(rename = #field_json_lit)]
                 pub #fname_ident: #root::WebSortDirection,
             }
         });
@@ -1781,6 +1983,29 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 	let out = quote! {
 
 		#(#op_defs)*
+
+		#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+		#[serde(untagged)]
+		pub enum #agg_count_op_ident {
+			Eq { eq: i64 },
+			Neq { neq: i64 },
+			Gt { gt: i64 },
+			Gte { gte: i64 },
+			Lt { lt: i64 },
+			Lte { lte: i64 },
+		}
+
+		#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+		pub struct #agg_count_struct {
+			#[serde(rename = #count_field_lit)]
+			pub count: #agg_count_op_ident,
+		}
+
+		#[derive(Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, Debug)]
+		#[serde(untagged)]
+		pub enum #agg_leaf_ident {
+			Count(#agg_count_struct),
+		}
 
 
 		#(#leaf_structs)*
@@ -1806,6 +2031,7 @@ pub fn derive_webquery(input: TokenStream) -> TokenStream {
 		impl #root::WebQueryModel for #struct_ident {
 			type Leaf      = #leaf_ident;
 			type SortField = #sort_field_ident;
+			type AggregateLeaf = #agg_leaf_ident;
 		}
 
 	};
@@ -2093,6 +2319,9 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let dto_ident = &dto.ident;
 	let leaf_ident = format_ident!("{}Leaf", dto_ident);
 	let sort_field_ident = format_ident!("{}SortField", dto_ident);
+	let agg_leaf_ident = format_ident!("{}AggregateLeaf", dto_ident);
+	let agg_count_struct = format_ident!("{}AggregateCount", dto_ident);
+	let agg_count_op_ident = format_ident!("{}AggregateCountOp", dto_ident);
 
 	let data = match &dto.data {
 		Data::Struct(s) => s,
@@ -2358,6 +2587,25 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
 		) -> <#entity_ty as #root::QueryContext>::Sort {
 			match sort {
 				#(#sort_arms),* ,
+			}
+		}
+	}
+
+	impl #root::web::AggregateBindable<#entity_ty> for #dto_ident {
+		fn map_aggregate_leaf(
+			leaf: &<#dto_ident as #root::WebQueryModel>::AggregateLeaf
+		) -> #root::select::HavingPredicate {
+			match leaf {
+				#agg_leaf_ident::Count(inner @ #agg_count_struct { .. }) => {
+					match &inner.count {
+						#agg_count_op_ident::Eq { eq } => #root::select::CountAllExpr::new().eq(*eq),
+						#agg_count_op_ident::Neq { neq } => #root::select::CountAllExpr::new().ne(*neq),
+						#agg_count_op_ident::Gt { gt } => #root::select::CountAllExpr::new().gt(*gt),
+						#agg_count_op_ident::Gte { gte } => #root::select::CountAllExpr::new().ge(*gte),
+						#agg_count_op_ident::Lt { lt } => #root::select::CountAllExpr::new().lt(*lt),
+						#agg_count_op_ident::Lte { lte } => #root::select::CountAllExpr::new().le(*lte),
+					}
+				}
 			}
 		}
 	}
@@ -2969,6 +3217,8 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 					right_pk,
 					alias_segment,
 					variant_ident,
+					friendly_name: derive_join_label(&field_name_snake),
+					related_ty: None,
 					cascade_type,
 				});
 			}
@@ -3529,6 +3779,26 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 	impl #root::FullTextSearchConfig for #config_ident {
 			fn include_rank(&self) -> bool {
 				self.include_rank
+			}
+		}
+
+		impl #root::FullTextSearchConfigBuilder for #config_ident {
+			fn new_with_query(query: String) -> Self {
+				Self::new(query)
+			}
+
+			fn apply_language(mut self, language: Option<String>) -> Self {
+				if let Some(language) = language {
+					self = self.with_language(language);
+				}
+				self
+			}
+
+			fn apply_rank(mut self, include_rank: Option<bool>) -> Self {
+				if matches!(include_rank, Some(false)) {
+					self = self.without_rank();
+				}
+				self
 			}
 		}
 

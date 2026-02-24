@@ -42,6 +42,7 @@ impl<T> WebSortField for T where
 pub trait WebQueryModel {
 	type Leaf: WebLeaf;
 	type SortField: WebSortField;
+	type AggregateLeaf: WebLeaf;
 }
 
 pub trait Bind<C>: WebQueryModel

@@ -28,7 +28,7 @@ use crate::helpers::{
 fn dto_filter_combined_with_inline_filter() {
 	let json: Value = json!({
 		"filter": {
-			 "different_name": { "like": "%Sternlampe%" }
+			 "differentName": { "like": "%Sternlampe%" }
 		},
 		"sort": null,
 		"page": null,
