@@ -1,14 +1,5 @@
 error: expected #[sqlxo(table_name = "...")]
- --> tests/orm/derive/try/err/wrong_form.rs:7:1
+ --> tests/orm/derive/try/err/wrong_form.rs:8:1
   |
-7 | #[sqlxo = "oops"]
+8 | #[sqlxo = "oops"]
   | ^^^^^^^^^^^^^^^^^
-
-warning: the feature `inherent_associated_types` is incomplete and may not be safe to use and/or cause compiler crashes
- --> tests/orm/derive/try/err/wrong_form.rs:1:12
-  |
-1 | #![feature(inherent_associated_types)]
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: see issue #8995 <https://github.com/rust-lang/rust/issues/8995> for more information
-  = note: `#[warn(incomplete_features)]` on by default

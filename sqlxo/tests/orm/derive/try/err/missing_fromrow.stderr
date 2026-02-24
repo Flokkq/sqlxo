@@ -1,22 +1,13 @@
-warning: the feature `inherent_associated_types` is incomplete and may not be safe to use and/or cause compiler crashes
- --> tests/orm/derive/try/err/missing_fromrow.rs:1:12
-  |
-1 | #![feature(inherent_associated_types)]
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: see issue #8995 <https://github.com/rust-lang/rust/issues/8995> for more information
-  = note: `#[warn(incomplete_features)]` on by default
-
 error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:12
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:12
   |
-7 | pub struct T {
+8 | pub struct T {
   |            ^ unsatisfied trait bound
   |
 help: the trait `for<'r> FromRow<'r, PgRow>` is not implemented for `T`
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:1
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:1
   |
-7 | pub struct T {
+8 | pub struct T {
   | ^^^^^^^^^^^^
   = help: the following other types implement trait `FromRow<'r, R>`:
             ()
@@ -36,15 +27,15 @@ note: required by a bound in `sqlxo::QueryContext::Model`
   |                 ^^^^^^^^^^ required by this bound in `QueryContext::Model`
 
 error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:12
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:12
   |
-7 | pub struct T {
+8 | pub struct T {
   |            ^ unsatisfied trait bound
   |
 help: the trait `for<'r> FromRow<'r, PgRow>` is not implemented for `T`
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:1
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:1
   |
-7 | pub struct T {
+8 | pub struct T {
   | ^^^^^^^^^^^^
   = help: the following other types implement trait `FromRow<'r, R>`:
             ()
@@ -64,15 +55,15 @@ note: required by a bound in `sqlxo::Filterable::Entity`
   |                  ^^^^^^^^^^ required by this bound in `Filterable::Entity`
 
 error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:12
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:12
   |
-7 | pub struct T {
+8 | pub struct T {
   |            ^ unsatisfied trait bound
   |
 help: the trait `for<'r> FromRow<'r, PgRow>` is not implemented for `T`
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:1
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:1
   |
-7 | pub struct T {
+8 | pub struct T {
   | ^^^^^^^^^^^^
   = help: the following other types implement trait `FromRow<'r, R>`:
             ()
@@ -92,15 +83,15 @@ note: required by a bound in `sqlxo::Sortable::Entity`
   |                  ^^^^^^^^^^ required by this bound in `Sortable::Entity`
 
 error[E0277]: the trait bound `for<'r> T: FromRow<'r, PgRow>` is not satisfied
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:12
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:12
   |
-7 | pub struct T {
+8 | pub struct T {
   |            ^ unsatisfied trait bound
   |
 help: the trait `for<'r> FromRow<'r, PgRow>` is not implemented for `T`
- --> tests/orm/derive/try/err/missing_fromrow.rs:7:1
+ --> tests/orm/derive/try/err/missing_fromrow.rs:8:1
   |
-7 | pub struct T {
+8 | pub struct T {
   | ^^^^^^^^^^^^
   = help: the following other types implement trait `FromRow<'r, R>`:
             ()

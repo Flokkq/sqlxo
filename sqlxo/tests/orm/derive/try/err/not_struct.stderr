@@ -1,22 +1,13 @@
 error: enums are not supported
- --> tests/orm/derive/try/err/not_struct.rs:7:1
-  |
-7 | / pub enum E {
-8 | |     A,
-9 | | }
-  | |_^
+  --> tests/orm/derive/try/err/not_struct.rs:8:1
+   |
+ 8 | / pub enum E {
+ 9 | |     A,
+10 | | }
+   | |_^
 
 error: `Query` supports only structs
- --> tests/orm/derive/try/err/not_struct.rs:7:10
+ --> tests/orm/derive/try/err/not_struct.rs:8:10
   |
-7 | pub enum E {
+8 | pub enum E {
   |          ^
-
-warning: the feature `inherent_associated_types` is incomplete and may not be safe to use and/or cause compiler crashes
- --> tests/orm/derive/try/err/not_struct.rs:1:12
-  |
-1 | #![feature(inherent_associated_types)]
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: see issue #8995 <https://github.com/rust-lang/rust/issues/8995> for more information
-  = note: `#[warn(incomplete_features)]` on by default

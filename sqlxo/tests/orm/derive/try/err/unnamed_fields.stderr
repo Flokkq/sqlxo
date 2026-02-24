@@ -1,14 +1,5 @@
 error: `Query` requires named fields
- --> tests/orm/derive/try/err/unnamed_fields.rs:7:13
+ --> tests/orm/derive/try/err/unnamed_fields.rs:8:13
   |
-7 | pub struct T(String, i32);
+8 | pub struct T(String, i32);
   |             ^^^^^^^^^^^^^
-
-warning: the feature `inherent_associated_types` is incomplete and may not be safe to use and/or cause compiler crashes
- --> tests/orm/derive/try/err/unnamed_fields.rs:1:12
-  |
-1 | #![feature(inherent_associated_types)]
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: see issue #8995 <https://github.com/rust-lang/rust/issues/8995> for more information
-  = note: `#[warn(incomplete_features)]` on by default

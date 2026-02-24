@@ -1,14 +1,5 @@
 error: duplicate key `table_name`
- --> tests/orm/derive/try/err/duplicate_key.rs:7:27
+ --> tests/orm/derive/try/err/duplicate_key.rs:8:27
   |
-7 | #[sqlxo(table_name = "a", table_name = "b")]
+8 | #[sqlxo(table_name = "a", table_name = "b")]
   |                           ^^^^^^^^^^^^^^^^
-
-warning: the feature `inherent_associated_types` is incomplete and may not be safe to use and/or cause compiler crashes
- --> tests/orm/derive/try/err/duplicate_key.rs:1:12
-  |
-1 | #![feature(inherent_associated_types)]
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: see issue #8995 <https://github.com/rust-lang/rust/issues/8995> for more information
-  = note: `#[warn(incomplete_features)]` on by default
