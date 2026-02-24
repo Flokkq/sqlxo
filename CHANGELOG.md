@@ -1,6 +1,30 @@
 # Changelog
 
 
+## [0.6.0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.8..v0.6.0) - 2026-02-24
+
+
+
+
+### ✨ Features
+
+- *(webquery)* Typesafe joins - ([270f2e0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/270f2e09806489ddae585b0862928ef0e551be9e))
+- *(webquery)* Allow for update and delete - ([9c8aff3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/9c8aff37e19e876568acd6e4f5cf6c27ddd8ca9d))
+- *(webquery)* Improve aggregate handling - ([d531e5e](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/d531e5ec2270496c77317bdb5315a83945c331a8))
+- *(webquery)* Add fts, aggregations and joins - ([2797ef2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/2797ef2e565a86ca7ee33df1108b9b0c5a9569a9))
+- *(aggregation)* Implement aggregation function in take and add new having clause - ([ab47250](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/ab4725066e0a12973f663cc997257e92ed2899da))
+- *(fts)* Make joined columns searchable - ([5f77f44](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/5f77f4415ddd24d6b16e88f3a0ef0005f3ca20e8))
+- *(join)* Add navigation properties - ([3000217](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/300021712c9c28d6397e9c9e8b30e21d4feb7351))
+- *(fts)* Implement full text search - ([8a6211d](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/8a6211d8d596bf2a51e5339612330b4825f3bafe))
+- *(take)* Implement taking joined columns - ([63a5b0f](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/63a5b0f072bb506e2ff0973aceda55488c713cdf))
+- *(join)* Reimplement joins - ([9d368fc](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/9d368fc6ccf20b761e10fc057608b23b6722be3a))
+- *(take)* Select specific columns of query - ([d19b434](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/d19b4349d0aa29a746c90c4ee717a02b2f07f085))
+
+### 🔧Chores
+
+- *(tests)* Replace lossy comparison with full string assert - ([9b53a3d](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/9b53a3d869dfe76c2af4ea90bfcef952c24dd0fe))
+
+
 ## [0.5.8](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.5.7..v0.5.8) - 2026-01-22
 
 
@@ -12,6 +36,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.5.8 - ([545884a](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/545884a958ab75ab8dca3249fdfe564930a19b09))
 - Remove dead packages from flake - ([f3ae258](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/f3ae2587c300cf750f425ef81d9365a22c7abc17))
 
 
