@@ -1,6 +1,24 @@
 # Changelog
 
 
+## [0.7.0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.6.3..v0.7.0) - 2026-02-28
+
+
+
+
+### ✨ Features
+
+- *(join)* Add proper navigation hydration - ([f84d970](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/f84d970c19aa85984c5eeba6362751430be3a4f4))
+
+### 🐛 Bug Fixes
+
+- Fix import issues in derive macro and remove dead code - ([425536b](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/425536b6f54aade975af0829ad350e508a4619db))
+
+### 🔧Chores
+
+- *(bench)* Add criterion for benchmarking - ([05b6b55](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/05b6b55bec2b7d87773033ba7b94b1ec06d0207b))
+
+
 ## [0.6.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.6.2..v0.6.3) - 2026-02-24
 
 
@@ -8,6 +26,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.6.3 - ([c2c7dcc](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/c2c7dccfb18222fef6e1dfca2990bbb1a6a2dd5a))
 - *(tests)* Update try err outputs - ([5754998](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/5754998f3174e4d77066a77d1176feba242e86c4))
 
 
