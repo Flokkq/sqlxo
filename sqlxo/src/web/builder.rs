@@ -15,6 +15,7 @@ use crate::{
 		WebAggregateExpression,
 		WebDeleteFilter,
 		WebExpression,
+		WebQueryError,
 		WebReadFilter,
 		WebSearch,
 		WebUpdateFilter,
@@ -96,7 +97,7 @@ trait SearchApplier<'a, C: QueryContext> {
 	fn apply(
 		builder: ReadQueryBuilder<'a, C>,
 		search: &WebSearch,
-	) -> ReadQueryBuilder<'a, C>;
+	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError>;
 }
 
 struct SearchBridge<C: QueryContext>(std::marker::PhantomData<C>);
@@ -108,11 +109,10 @@ where
 	default fn apply(
 		_builder: ReadQueryBuilder<'a, C>,
 		_search: &WebSearch,
-	) -> ReadQueryBuilder<'a, C> {
-		panic!(
-			"full-text search is not supported for {}",
-			std::any::type_name::<C::Model>()
-		);
+	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError> {
+		Err(WebQueryError::SearchUnsupported {
+			model: std::any::type_name::<C::Model>(),
+		})
 	}
 }
 
@@ -126,15 +126,17 @@ where
 	fn apply(
 		builder: ReadQueryBuilder<'a, C>,
 		search: &WebSearch,
-	) -> ReadQueryBuilder<'a, C> {
+	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError> {
 		let config =
 			<<C::Model as FullTextSearchable>::FullTextSearchConfig as
 				FullTextSearchConfigBuilder>::new_with_query(
 				search.query.clone(),
 			)
 			.apply_language(search.language.clone())
-			.apply_rank(search.include_rank);
-		builder.search(config)
+			.apply_rank(search.include_rank)
+			.apply_fuzzy(search.fuzzy)
+			.apply_fuzzy_threshold(search.fuzzy_threshold);
+		Ok(builder.search(config))
 	}
 }
 
@@ -142,12 +144,25 @@ impl<'a, C> QueryBuilder<C>
 where
 	C: QueryContext,
 {
-	pub fn from_web_read<D>(dto: &WebReadFilter<D>) -> ReadQueryBuilder<'a, C>
+	pub fn try_from_web_read<D>(
+		dto: &WebReadFilter<D>,
+	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError>
 	where
 		D: WebQueryModel + Bind<C> + AggregateBindable<C>,
 		C::Model: crate::GetDeleteMarker + sqlxo_traits::JoinNavigationModel,
 	{
 		ParsedWebReadQuery::<C, D>::new(dto).into_read_builder()
+	}
+
+	pub fn from_web_read<D>(dto: &WebReadFilter<D>) -> ReadQueryBuilder<'a, C>
+	where
+		D: WebQueryModel + Bind<C> + AggregateBindable<C>,
+		C::Model: crate::GetDeleteMarker + sqlxo_traits::JoinNavigationModel,
+	{
+		Self::try_from_web_read::<D>(dto).expect(
+			"use `QueryBuilder::try_from_web_read` to handle unsupported \
+			 search payloads or other web query validation errors",
+		)
 	}
 
 	pub fn from_web_update<D>(
@@ -262,7 +277,9 @@ where
 		}
 	}
 
-	fn into_read_builder<'a>(self) -> ReadQueryBuilder<'a, C>
+	fn into_read_builder<'a>(
+		self,
+	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError>
 	where
 		C::Model: crate::GetDeleteMarker + sqlxo_traits::JoinNavigationModel,
 	{
@@ -289,9 +306,7 @@ where
 		}
 
 		if let Some(search) = search {
-			builder = <SearchBridge<C> as SearchApplier<'a, C>>::apply(
-				builder, &search,
-			);
+			builder = SearchBridge::<C>::apply(builder, &search)?;
 		}
 
 		if let Some(preds) = having {
@@ -308,6 +323,6 @@ where
 			builder = builder.paginate(page);
 		}
 
-		builder
+		Ok(builder)
 	}
 }

@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE supplier (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL

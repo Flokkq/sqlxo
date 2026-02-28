@@ -23,6 +23,19 @@ pub use page::{
 	WebPagination,
 };
 
+/// Errors that may occur while translating a [`WebReadFilter`] into a query.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum WebQueryError {
+	/// A `search` payload was provided but the target model does not implement
+	/// [`FullTextSearchable`](sqlxo_traits::FullTextSearchable).
+	#[error(
+		"full-text search is not supported for `{model}`; ensure the model derives `FullTextSearchable` or omit the `search` payload"
+	)]
+	SearchUnsupported {
+		model: &'static str,
+	},
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
 #[serde(bound(deserialize = "Q: WebLeaf + Deserialize<'de>, S: \
                              WebSortField + Deserialize<'de>, A: WebLeaf + \
@@ -95,6 +108,10 @@ pub struct WebSearch {
 	pub language:     Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub include_rank: Option<bool>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub fuzzy:        Option<bool>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub fuzzy_threshold: Option<f64>,
 }
 
 pub type WebExpression<T> =

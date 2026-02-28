@@ -4795,35 +4795,73 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		let column = &info.column;
 		let is_option = info.is_option;
 		quote! {
+				if !config.is_ignored(#fts_enum_ident::#variant) {
+					if wrote_segment {
+						w.push(" || ");
+					}
+					wrote_segment = true;
+					w.push("setweight(to_tsvector('");
+					w.push(config.language());
+					w.push("', ");
+
+					if #is_option {
+						w.push("COALESCE(\"");
+						w.push(base_alias);
+						w.push("\".\"");
+						w.push(#column);
+						w.push("\", '')");
+					} else {
+						w.push("\"");
+						w.push(base_alias);
+						w.push("\".\"");
+						w.push(#column);
+						w.push("\"");
+					}
+
+					w.push("), ");
+					w.push(
+						config
+							.weight_for(#fts_enum_ident::#variant)
+							.sql_literal(),
+					);
+					w.push(")");
+				}
+		}
+	});
+
+	let fuzzy_conditions = fields_info.iter().map(|info| {
+		let variant = &info.variant;
+		let column = &info.column;
+		let is_option = info.is_option;
+		quote! {
 			if !config.is_ignored(#fts_enum_ident::#variant) {
 				if wrote_segment {
-					w.push(" || ");
+					w.push(" OR ");
+				} else {
+					wrote_segment = true;
 				}
-				wrote_segment = true;
-				w.push("setweight(to_tsvector('");
-				w.push(config.language());
-				w.push("', ");
-
+				w.push("(");
+				w.push("SIMILARITY(");
+				w.push("LOWER(");
 				if #is_option {
 					w.push("COALESCE(\"");
 					w.push(base_alias);
 					w.push("\".\"");
 					w.push(#column);
-					w.push("\", '')");
+					w.push("\", '')::text");
+					w.push(")");
 				} else {
 					w.push("\"");
 					w.push(base_alias);
 					w.push("\".\"");
 					w.push(#column);
-					w.push("\"");
+					w.push("\"::text");
+					w.push(")");
 				}
-
-				w.push("), ");
-				w.push(
-					config
-						.weight_for(#fts_enum_ident::#variant)
-						.sql_literal(),
-				);
+				w.push(", ");
+				w.bind(fuzzy_query.to_string());
+				w.push(") >= ");
+				w.bind(threshold);
 				w.push(")");
 			}
 		}
@@ -5067,6 +5105,9 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 	#[derive(Debug, Clone)]
 	pub struct #config_ident {
 		query:            String,
+		prefix_query:     Option<String>,
+		fuzzy_query:      Option<String>,
+		fuzzy_threshold:  Option<f64>,
 		language:         String,
 		weight_overrides: Vec<(#fts_enum_ident, #root::SearchWeight)>,
 		ignored_fields:   Vec<#fts_enum_ident>,
@@ -5078,8 +5119,14 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 
 	impl #config_ident {
 			pub fn new(query: impl Into<String>) -> Self {
+				let query = query.into();
+				let prefix_query = Self::build_prefix_query(&query);
+				let fuzzy_query = Self::build_fuzzy_query(&query);
 				Self {
-					query:            query.into(),
+					query,
+					prefix_query,
+					fuzzy_query,
+					fuzzy_threshold:  Some(0.35),
 					language:         #const_ident.to_string(),
 					weight_overrides: Vec::new(),
 					ignored_fields:   Vec::new(),
@@ -5149,8 +5196,30 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				&self.query
 			}
 
+			pub fn prefix_query(&self) -> Option<&str> {
+				self.prefix_query.as_deref()
+			}
+
 			pub fn include_rank(&self) -> bool {
 				self.include_rank
+			}
+
+			pub fn fuzzy_threshold(&self) -> Option<f64> {
+				self.fuzzy_threshold
+			}
+
+			pub fn with_fuzzy_threshold(mut self, threshold: f64) -> Self {
+				self.fuzzy_threshold = Some(threshold);
+				self
+			}
+
+			pub fn disable_fuzzy(mut self) -> Self {
+				self.fuzzy_threshold = None;
+				self
+			}
+
+			pub fn fuzzy_query_str(&self) -> Option<&str> {
+				self.fuzzy_query.as_deref()
 			}
 
 			fn assert_valid_language(language: &str) {
@@ -5178,6 +5247,34 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 					.map(|(_, w)| *w)
 					.unwrap_or_else(|| field.default_weight())
 			}
+
+			fn build_prefix_query(source: &str) -> Option<String> {
+				let mut tokens: Vec<String> = Vec::new();
+				for raw in source.split_whitespace() {
+					let cleaned: String = raw
+						.chars()
+						.filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+						.map(|c| c.to_ascii_lowercase())
+						.collect();
+					if cleaned.is_empty() {
+						continue;
+					}
+					tokens.push(format!("{}:*", cleaned));
+				}
+				if tokens.is_empty() {
+					None
+				} else {
+					Some(tokens.join(" & "))
+				}
+			}
+
+			fn build_fuzzy_query(source: &str) -> Option<String> {
+				let trimmed = source.trim();
+				if trimmed.is_empty() {
+					return None;
+				}
+				Some(trimmed.to_ascii_lowercase())
+			}
 		}
 
 	#join_impl_tokens
@@ -5185,6 +5282,14 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 	impl #root::FullTextSearchConfig for #config_ident {
 			fn include_rank(&self) -> bool {
 				self.include_rank
+			}
+
+			fn fuzzy_threshold(&self) -> Option<f64> {
+				self.fuzzy_threshold
+			}
+
+			fn fuzzy_query(&self) -> Option<&str> {
+				self.fuzzy_query_str()
 			}
 		}
 
@@ -5203,6 +5308,20 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			fn apply_rank(mut self, include_rank: Option<bool>) -> Self {
 				if matches!(include_rank, Some(false)) {
 					self = self.without_rank();
+				}
+				self
+			}
+
+			fn apply_fuzzy(mut self, enable_fuzzy: Option<bool>) -> Self {
+				if matches!(enable_fuzzy, Some(false)) {
+					self = self.disable_fuzzy();
+				}
+				self
+			}
+
+			fn apply_fuzzy_threshold(mut self, threshold: Option<f64>) -> Self {
+				if let Some(value) = threshold {
+					self = self.with_fuzzy_threshold(value);
 				}
 				self
 			}
@@ -5236,10 +5355,17 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			where
 				W: #root::SqlWrite,
 			{
+				w.push("(");
 				w.push("websearch_to_tsquery('");
 				w.push(config.language());
 				w.push("', ");
 				w.bind(config.query.clone());
+				w.push(")");
+				if let Some(prefix) = config.prefix_query() {
+					w.push(" || to_tsquery('simple', ");
+					w.bind(prefix.to_string());
+					w.push(")");
+				}
 				w.push(")");
 			}
 
@@ -5256,6 +5382,33 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				w.push(", ");
 				Self::write_tsquery(w, config);
 				w.push(")");
+			}
+
+			fn write_fuzzy<W>(
+				w: &mut W,
+				base_alias: &str,
+				_joins: Option<&[#root::JoinPath]>,
+				config: &Self::FullTextSearchConfig,
+			) where
+				W: #root::SqlWrite,
+			{
+				if let (
+					Some(fuzzy_query),
+					Some(threshold),
+				) = (
+					<#config_ident as #root::FullTextSearchConfig>::fuzzy_query(config),
+					<#config_ident as #root::FullTextSearchConfig>::fuzzy_threshold(config),
+				) {
+					w.push("(");
+					let mut wrote_segment = false;
+					#(#fuzzy_conditions)*
+					if !wrote_segment {
+						w.push("FALSE");
+					}
+					w.push(")");
+				} else {
+					w.push("FALSE");
+				}
 			}
 		}
 	};

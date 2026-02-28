@@ -51,6 +51,7 @@ pub use web::{
 	WebDeleteFilter,
 	WebExpression,
 	WebFilter,
+	WebQueryError,
 	WebReadFilter,
 	WebSort,
 	WebUpdateFilter,

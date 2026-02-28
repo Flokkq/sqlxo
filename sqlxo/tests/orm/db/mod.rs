@@ -374,6 +374,72 @@ async fn full_text_search_includes_joined_table_fields() {
 }
 
 #[tokio::test]
+async fn full_text_search_supports_prefix_queries() {
+	let pool = get_connection_pool().await;
+
+	let mut matches_prefix = Item::default();
+	matches_prefix.name = "Aluminiumwinkel".into();
+	matches_prefix.description = "angle bracket".into();
+	insert_item(&matches_prefix, &pool).await.unwrap();
+
+	let mut does_not_match = Item::default();
+	does_not_match.name = "Stahlbolzen".into();
+	does_not_match.description = "steel bolt".into();
+	insert_item(&does_not_match, &pool).await.unwrap();
+
+	let results: Vec<Item> = QueryBuilder::<Item>::read()
+		.search(
+			ItemFullTextSearchConfig::new("Alu")
+				.with_language("german")
+				.disable_fuzzy(),
+		)
+		.build()
+		.fetch_all(&pool)
+		.await
+		.unwrap();
+
+	assert!(
+		results.iter().any(|row| row.id == matches_prefix.id),
+		"expected prefix query to match inserted item"
+	);
+	assert!(
+		results.iter().all(|row| row.id != does_not_match.id),
+		"prefix query should not match unrelated terms"
+	);
+}
+
+#[tokio::test]
+async fn full_text_search_handles_typos_with_fuzzy_matching() {
+	let pool = get_connection_pool().await;
+
+	let mut bracket = Item::default();
+	bracket.name = "bracket".into();
+	bracket.description = "aluminium bracket".into();
+	insert_item(&bracket, &pool).await.unwrap();
+
+	let mut other = Item::default();
+	other.name = "washer".into();
+	other.description = "steel washer".into();
+	insert_item(&other, &pool).await.unwrap();
+
+	let results: Vec<Item> = QueryBuilder::<Item>::read()
+		.search(ItemFullTextSearchConfig::new("brket"))
+		.build()
+		.fetch_all(&pool)
+		.await
+		.unwrap();
+
+	assert!(
+		results.iter().any(|row| row.id == bracket.id),
+		"expected fuzzy search to match misspelled term"
+	);
+	assert!(
+		results.iter().all(|row| row.id != other.id),
+		"fuzzy search should not match unrelated items"
+	);
+}
+
+#[tokio::test]
 async fn full_text_search_supports_multi_hop_joined_fields() {
 	let pool = get_connection_pool().await;
 

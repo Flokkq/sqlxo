@@ -412,12 +412,34 @@ impl SearchWeight {
 
 pub trait FullTextSearchConfig {
 	fn include_rank(&self) -> bool;
+
+	fn fuzzy_threshold(&self) -> Option<f64> {
+		None
+	}
+
+	fn fuzzy_query(&self) -> Option<&str> {
+		None
+	}
 }
 
 pub trait FullTextSearchConfigBuilder: FullTextSearchConfig {
 	fn new_with_query(query: String) -> Self;
 	fn apply_language(self, language: Option<String>) -> Self;
 	fn apply_rank(self, include_rank: Option<bool>) -> Self;
+
+	fn apply_fuzzy(self, _enable_fuzzy: Option<bool>) -> Self
+	where
+		Self: Sized,
+	{
+		self
+	}
+
+	fn apply_fuzzy_threshold(self, _threshold: Option<f64>) -> Self
+	where
+		Self: Sized,
+	{
+		self
+	}
 }
 
 pub trait FullTextSearchable: Sized {
@@ -444,4 +466,16 @@ pub trait FullTextSearchable: Sized {
 		config: &Self::FullTextSearchConfig,
 	) where
 		W: SqlWrite;
+
+	fn write_fuzzy<W>(
+		w: &mut W,
+		base_alias: &str,
+		joins: Option<&[JoinPath]>,
+		config: &Self::FullTextSearchConfig,
+	) where
+		W: SqlWrite,
+	{
+		let _ = (base_alias, joins, config);
+		w.push("FALSE");
+	}
 }

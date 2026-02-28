@@ -118,9 +118,17 @@ where
 		joins: Option<&[JoinPath]>,
 	) {
 		w.push("(");
+		w.push("(");
 		M::write_tsvector(w, base_alias, joins, &self.config);
 		w.push(") @@ (");
 		M::write_tsquery(w, &self.config);
+		w.push(")");
+		if self.config.fuzzy_threshold().is_some() &&
+			self.config.fuzzy_query().is_some()
+		{
+			w.push(" OR ");
+			M::write_fuzzy(w, base_alias, joins, &self.config);
+		}
 		w.push(")");
 	}
 
