@@ -5106,8 +5106,8 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 	pub struct #config_ident {
 		query:            String,
 		prefix_query:     Option<String>,
-		fuzzy_query:      Option<String>,
 		fuzzy_threshold:  Option<f64>,
+		fuzzy_query:      Option<String>,
 		language:         String,
 		weight_overrides: Vec<(#fts_enum_ident, #root::SearchWeight)>,
 		ignored_fields:   Vec<#fts_enum_ident>,
@@ -5122,11 +5122,13 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				let query = query.into();
 				let prefix_query = Self::build_prefix_query(&query);
 				let fuzzy_query = Self::build_fuzzy_query(&query);
+				let fuzzy_threshold =
+					fuzzy_query.as_ref().map(|q| Self::default_fuzzy_threshold(q));
 				Self {
 					query,
 					prefix_query,
 					fuzzy_query,
-					fuzzy_threshold:  Some(0.35),
+					fuzzy_threshold,
 					language:         #const_ident.to_string(),
 					weight_overrides: Vec::new(),
 					ignored_fields:   Vec::new(),
@@ -5251,11 +5253,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			fn build_prefix_query(source: &str) -> Option<String> {
 				let mut tokens: Vec<String> = Vec::new();
 				for raw in source.split_whitespace() {
-					let cleaned: String = raw
-						.chars()
-						.filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
-						.map(|c| c.to_ascii_lowercase())
-						.collect();
+					let cleaned = raw.trim().to_lowercase();
 					if cleaned.is_empty() {
 						continue;
 					}
@@ -5269,11 +5267,28 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			}
 
 			fn build_fuzzy_query(source: &str) -> Option<String> {
-				let trimmed = source.trim();
-				if trimmed.is_empty() {
+				let normalized_tokens: Vec<String> = source
+					.split_whitespace()
+					.map(|token| token.trim().to_lowercase())
+					.filter(|token| !token.is_empty())
+					.collect();
+
+				if normalized_tokens.is_empty() {
 					return None;
 				}
-				Some(trimmed.to_ascii_lowercase())
+
+				Some(normalized_tokens.join(" "))
+			}
+
+			fn default_fuzzy_threshold(normalized: &str) -> f64 {
+				let len = normalized.chars().filter(|c| !c.is_whitespace()).count();
+				match len {
+					0..=4 => 0.20,
+					5..=6 => 0.25,
+					7..=9 => 0.30,
+					10..=14 => 0.33,
+					_ => 0.35,
+				}
 			}
 		}
 

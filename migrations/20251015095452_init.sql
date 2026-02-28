@@ -57,6 +57,12 @@ CREATE TABLE hard_delete_item (
     updated_at TIMESTAMPTZ
 );
 
+CREATE INDEX idx_item_name_trgm ON item USING gin (name gin_trgm_ops);
+CREATE INDEX idx_item_description_trgm ON item USING gin (description gin_trgm_ops);
+CREATE INDEX idx_material_name_trgm ON material USING gin (name gin_trgm_ops);
+CREATE INDEX idx_material_description_trgm ON material USING gin (description gin_trgm_ops);
+CREATE INDEX idx_hard_delete_item_name_trgm ON hard_delete_item USING gin (name gin_trgm_ops);
+
 CREATE TABLE soft_delete_item (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
