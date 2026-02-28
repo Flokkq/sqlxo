@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.7.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.2..v0.7.3) - 2026-02-28
+
+
+
+
+### ✨ Features
+
+- *(webquery)* Split webquery into seperate rud types - ([678d3fa](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/678d3fa418fd30f2cf2b667579cff3c5ae6995fd))
+
+
 ## [0.7.2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.1..v0.7.2) - 2026-02-28
 
 
@@ -9,6 +19,10 @@
 ### ✨ Features
 
 - Simplify utoipa webquery export - ([debf4bc](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/debf4bc71d8d1431f72cdcd89b4fcfaa4dfb6bc7))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.7.2 - ([2869eaa](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/2869eaa31b99217fab13ff5934893470d12bb2bd))
 
 
 ## [0.7.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.0..v0.7.1) - 2026-02-28
