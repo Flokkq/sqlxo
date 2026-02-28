@@ -2400,16 +2400,16 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 				let mut merged: ::std::vec::Vec<Self> =
 					::std::vec::Vec::new();
-				let mut seen: ::std::collections::HashMap<#pk_ty, usize> =
-					::std::collections::HashMap::new();
+				let mut keys: ::std::vec::Vec<#pk_ty> =
+					::std::vec::Vec::new();
 
 				for mut row in rows {
 					let key = row.#pk_ident.clone();
-					if let Some(&idx) = seen.get(&key) {
+					if let Some(idx) = keys.iter().position(|existing| existing == &key) {
 						let existing = &mut merged[idx];
 						#(#merge_collection_apply)*
 					} else {
-						seen.insert(key, merged.len());
+						keys.push(key);
 						merged.push(row);
 					}
 				}

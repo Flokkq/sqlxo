@@ -4,10 +4,6 @@ use sqlx::{
 	prelude::Type,
 	Postgres,
 };
-use std::{
-	collections::HashSet,
-	hash::Hash,
-};
 
 pub trait QueryModel =
 	Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>;
@@ -263,11 +259,12 @@ pub fn merge_join_collections<T>(
 		}
 		JoinValue::Loaded(existing) => {
 			if let JoinValue::Loaded(mut values) = incoming {
-				let mut seen: HashSet<T::Key> =
+				let mut keys: Vec<T::Key> =
 					existing.iter().map(|item| item.join_key()).collect();
 				for value in values.drain(..) {
 					let key = value.join_key();
-					if seen.insert(key) {
+					if keys.iter().all(|existing_key| existing_key != &key) {
+						keys.push(key);
 						existing.push(value);
 					}
 				}
@@ -289,7 +286,7 @@ pub trait JoinLoadable: Sized {
 }
 
 pub trait JoinIdentifiable {
-	type Key: Eq + Hash;
+	type Key: PartialEq;
 
 	fn join_key(&self) -> Self::Key;
 }
