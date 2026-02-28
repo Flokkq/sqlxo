@@ -20,7 +20,6 @@ use quote::{
 use syn::{
 	parse_macro_input,
 	parse_quote,
-	punctuated::Punctuated,
 	spanned::Spanned,
 	Data,
 	DeriveInput,
@@ -31,8 +30,6 @@ use syn::{
 	Lit,
 	Meta,
 	NestedMeta,
-	PathArguments,
-	PathSegment,
 	Visibility,
 };
 
@@ -47,7 +44,7 @@ enum Kind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Will be used for future cascade behavior
+#[allow(dead_code)]
 enum CascadeType {
 	Cascade,
 	Restrict,
@@ -314,8 +311,6 @@ struct FkSpec {
 	variant_ident:  Ident,
 	friendly_name:  String,
 	related_ty:     Option<syn::Type>,
-	#[allow(dead_code)] // Will be used for future cascade behavior
-	cascade_type: Option<CascadeType>,
 }
 
 struct ManualJoinSpec {
@@ -1111,37 +1106,6 @@ fn derive_join_path_type(ty: &syn::Type) -> syn::Type {
 	}
 }
 
-fn replace_last_segment_path(
-	entity_ty: &syn::Type,
-	replacement: &Ident,
-) -> syn::Path {
-	if let syn::Type::Path(type_path) = entity_ty {
-		let mut path = type_path.path.clone();
-		if let Some(last) = path.segments.last_mut() {
-			*last = PathSegment {
-				ident:     replacement.clone(),
-				arguments: PathArguments::None,
-			};
-		} else {
-			path.segments.push(PathSegment {
-				ident:     replacement.clone(),
-				arguments: PathArguments::None,
-			});
-		}
-		path
-	} else {
-		let mut segments = Punctuated::new();
-		segments.push(PathSegment {
-			ident:     replacement.clone(),
-			arguments: PathArguments::None,
-		});
-		syn::Path {
-			leading_colon: None,
-			segments,
-		}
-	}
-}
-
 #[proc_macro_derive(Query, attributes(sqlxo, primary_key, foreign_key))]
 pub fn derive_query(input: TokenStream) -> TokenStream {
 	let input = parse_macro_input!(input as DeriveInput);
@@ -1367,7 +1331,6 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				};
 
 				let mut to_value: Option<String> = None;
-				let mut cascade_type: Option<CascadeType> = None;
 
 				for nested in list.nested {
 					match nested {
@@ -1393,34 +1356,6 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 									)
 									.to_compile_error()
 									.into();
-								}
-							}
-						}
-						NestedMeta::Meta(Meta::List(inner_list))
-							if inner_list.path.is_ident("cascade_type") =>
-						{
-							for inner_nested in inner_list.nested {
-								if let NestedMeta::Meta(Meta::Path(path)) =
-									inner_nested
-								{
-									if path.is_ident("cascade") {
-										cascade_type =
-											Some(CascadeType::Cascade);
-									} else if path.is_ident("restrict") {
-										cascade_type =
-											Some(CascadeType::Restrict);
-									} else if path.is_ident("set_null") {
-										cascade_type =
-											Some(CascadeType::SetNull);
-									} else {
-										return Error::new_spanned(
-											path,
-											"unknown cascade type; expected \
-											 cascade, restrict, or set_null",
-										)
-										.to_compile_error()
-										.into();
-									}
 								}
 							}
 						}
@@ -1476,7 +1411,6 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 					variant_ident,
 					friendly_name,
 					related_ty: None,
-					cascade_type,
 				});
 			}
 		}
@@ -3962,11 +3896,9 @@ pub fn bind(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         });
 
-		let column_mod_ident = format_ident!("{}Column", entity_struct_ident);
-		let column_mod_path =
-			replace_last_segment_path(&entity_ty, &column_mod_ident);
-		let column_struct_ident = format_ident!("{}", target_pascal);
-		let column_type = quote! { #column_mod_path::#column_struct_ident };
+		let column_alias_ident =
+			format_ident!("{}{}", entity_struct_ident, target_pascal);
+		let column_type = quote! { <#entity_ty>::#column_alias_ident };
 		let mut push_agg =
 			|suffix_pascal: &str,
 			 suffix_snake: &str,
@@ -4594,7 +4526,6 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				};
 
 				let mut to_value: Option<String> = None;
-				let mut cascade_type: Option<CascadeType> = None;
 
 				for nested in list.nested {
 					match nested {
@@ -4620,34 +4551,6 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 									)
 									.to_compile_error()
 									.into();
-								}
-							}
-						}
-						NestedMeta::Meta(Meta::List(inner))
-							if inner.path.is_ident("cascade_type") =>
-						{
-							for inner_nested in inner.nested {
-								if let NestedMeta::Meta(Meta::Path(path)) =
-									inner_nested
-								{
-									if path.is_ident("cascade") {
-										cascade_type =
-											Some(CascadeType::Cascade);
-									} else if path.is_ident("restrict") {
-										cascade_type =
-											Some(CascadeType::Restrict);
-									} else if path.is_ident("set_null") {
-										cascade_type =
-											Some(CascadeType::SetNull);
-									} else {
-										return Error::new_spanned(
-											path,
-											"unknown cascade type; expected \
-											 cascade, restrict, or set_null",
-										)
-										.to_compile_error()
-										.into();
-									}
 								}
 							}
 						}
@@ -4702,7 +4605,6 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 					variant_ident,
 					friendly_name: derive_join_label(&field_name_snake),
 					related_ty: None,
-					cascade_type,
 				});
 			}
 		}

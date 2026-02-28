@@ -47,11 +47,11 @@ pub struct ItemWithCascade {
 	#[primary_key]
 	pub id:          Uuid,
 	pub name:        String,
-	#[foreign_key(to = "user.user_id", cascade_type(cascade))]
+	#[foreign_key(to = "user.user_id")]
 	pub user_id:     Uuid,
-	#[foreign_key(to = "category.id", cascade_type(restrict))]
+	#[foreign_key(to = "category.id")]
 	pub category_id: Option<Uuid>,
-	#[foreign_key(to = "parent.id", cascade_type(set_null))]
+	#[foreign_key(to = "parent.id")]
 	pub parent_id:   Option<Uuid>,
 }
 
