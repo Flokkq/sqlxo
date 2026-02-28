@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.7.5](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.4..v0.7.5) - 2026-02-28
+
+
+
+
+### ✨ Features
+
+- *(fts)* Improve fuzzy search - ([890607b](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/890607bb0a32a8069834593b071d76bd32bd60f2))
+
+
 ## [0.7.4](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.3..v0.7.4) - 2026-02-28
 
 
@@ -9,6 +19,10 @@
 ### ✨ Features
 
 - *(fts)* Add opt-out fuzzy matching for searches - ([43a3f68](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/43a3f68913cee32f7361fed11ad6aa61350ae861))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.7.4 - ([8d41bdd](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/8d41bdde27097f85d36baa6187e585c24b4ab183))
 
 
 ## [0.7.3](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.2..v0.7.3) - 2026-02-28
