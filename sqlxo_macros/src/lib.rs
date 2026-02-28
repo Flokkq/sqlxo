@@ -15,6 +15,7 @@ use proc_macro_crate::FoundCrate;
 use quote::{
 	format_ident,
 	quote,
+	ToTokens,
 };
 use syn::{
 	parse_macro_input,
@@ -317,9 +318,61 @@ struct FkSpec {
 	cascade_type: Option<CascadeType>,
 }
 
+struct ManualJoinSpec {
+	variant_ident: Ident,
+	friendly_name: String,
+	alias_segment: String,
+	left_field:    String,
+	right_table:   String,
+	right_field:   String,
+	related_ty:    Option<syn::Type>,
+	through:       Option<ThroughSpec>,
+}
+
+struct ThroughSpec {
+	table:         String,
+	alias_segment: String,
+	left_field:    String,
+	right_field:   String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelationKind {
+	BelongsTo,
+	HasOne,
+	HasMany,
+	ManyToMany,
+}
+
 #[derive(Debug, Clone)]
 struct NavigationAttr {
-	via: Option<String>,
+	kind:            RelationKind,
+	explicit_target: Option<syn::Type>,
+	fk:              Option<String>,
+	inverse:         Option<String>,
+	through:         Option<syn::Type>,
+	self_fk:         Option<String>,
+	other_fk:        Option<String>,
+	other_pk:        Option<String>,
+}
+
+impl NavigationAttr {
+	fn new(kind: RelationKind) -> Self {
+		Self {
+			kind,
+			explicit_target: None,
+			fk: None,
+			inverse: None,
+			through: None,
+			self_fk: None,
+			other_fk: None,
+			other_pk: None,
+		}
+	}
+
+	fn belongs_to_default() -> Self {
+		Self::new(RelationKind::BelongsTo)
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -327,7 +380,8 @@ struct PendingNavigation {
 	field_ident:    Ident,
 	field_name:     String,
 	ty:             syn::Type,
-	via_field_name: String,
+	attr:           NavigationAttr,
+	_is_collection: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -353,12 +407,13 @@ fn build_join_codegen(
 	_left_struct: &Ident,
 	left_table: &str,
 	fks: &[FkSpec],
+	manual: &[ManualJoinSpec],
 ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
 	let root = sqlxo_root();
 	let mut variants = Vec::new();
 	let mut descriptor_arms = Vec::new();
 
-	if fks.is_empty() {
+	if fks.is_empty() && manual.is_empty() {
 		let never = format_ident!("__Never");
 		variants.push(quote! { #never(::core::convert::Infallible) });
 		descriptor_arms.push(
@@ -396,6 +451,69 @@ fn build_join_codegen(
 				right_field:   #right_field_lit,
 				alias_segment: #alias_segment,
 				identifier:    #identifier_lit,
+				through:       None,
+			}
+		});
+	}
+
+	for spec in manual {
+		let var = &spec.variant_ident;
+		variants.push(quote! { #var });
+
+		let alias_segment = syn::LitStr::new(
+			&spec.alias_segment,
+			proc_macro2::Span::call_site(),
+		);
+		let friendly_lit = syn::LitStr::new(
+			&spec.friendly_name,
+			proc_macro2::Span::call_site(),
+		);
+		let left_table_lit =
+			syn::LitStr::new(left_table, proc_macro2::Span::call_site());
+		let left_field_lit =
+			syn::LitStr::new(&spec.left_field, proc_macro2::Span::call_site());
+		let right_table_lit =
+			syn::LitStr::new(&spec.right_table, proc_macro2::Span::call_site());
+		let right_field_lit =
+			syn::LitStr::new(&spec.right_field, proc_macro2::Span::call_site());
+		let through_expr = if let Some(through) = &spec.through {
+			let through_table = syn::LitStr::new(
+				&through.table,
+				proc_macro2::Span::call_site(),
+			);
+			let through_alias = syn::LitStr::new(
+				&through.alias_segment,
+				proc_macro2::Span::call_site(),
+			);
+			let through_left = syn::LitStr::new(
+				&through.left_field,
+				proc_macro2::Span::call_site(),
+			);
+			let through_right = syn::LitStr::new(
+				&through.right_field,
+				proc_macro2::Span::call_site(),
+			);
+			quote! {
+				Some(#root::JoinThroughDescriptor {
+					table:         #through_table,
+					alias_segment: #through_alias,
+					left_field:    #through_left,
+					right_field:   #through_right,
+				})
+			}
+		} else {
+			quote! { None }
+		};
+
+		descriptor_arms.push(quote! {
+			Self::#var => #root::JoinDescriptor {
+				left_table:    #left_table_lit,
+				left_field:    #left_field_lit,
+				right_table:   #right_table_lit,
+				right_field:   #right_field_lit,
+				alias_segment: #alias_segment,
+				identifier:    #friendly_lit,
+				through:       #through_expr,
 			}
 		});
 	}
@@ -568,6 +686,11 @@ fn has_sqlx_skip(field: &syn::Field) -> syn::Result<bool> {
 	Ok(false)
 }
 
+struct JoinValueInner {
+	ty:            syn::Type,
+	is_collection: bool,
+}
+
 fn extract_navigation_attr(
 	field: &syn::Field,
 ) -> syn::Result<Option<NavigationAttr>> {
@@ -597,7 +720,18 @@ fn extract_navigation_attr(
 							"duplicate navigation attribute",
 						));
 					}
-					navigation = Some(NavigationAttr { via: None });
+					navigation = Some(NavigationAttr::belongs_to_default());
+				}
+				NestedMeta::Meta(Meta::List(inner))
+					if inner.path.is_ident("rel") =>
+				{
+					if navigation.is_some() {
+						return Err(syn::Error::new_spanned(
+							inner.path,
+							"duplicate navigation attribute",
+						));
+					}
+					navigation = Some(parse_rel_navigation(&inner)?);
 				}
 				NestedMeta::Meta(Meta::List(inner))
 					if inner.path.is_ident("belongs_to") =>
@@ -608,39 +742,7 @@ fn extract_navigation_attr(
 							"duplicate navigation attribute",
 						));
 					}
-					let mut via: Option<String> = None;
-					for option in inner.nested.iter() {
-						match option {
-							NestedMeta::Meta(Meta::NameValue(nv))
-								if nv.path.is_ident("via") =>
-							{
-								if via.is_some() {
-									return Err(syn::Error::new_spanned(
-										nv,
-										"duplicate `via` option",
-									));
-								}
-								match &nv.lit {
-									Lit::Str(s) => {
-										via = Some(s.value());
-									}
-									other => {
-										return Err(syn::Error::new_spanned(
-											other,
-											"`via` must be a string",
-										));
-									}
-								}
-							}
-							other => {
-								return Err(syn::Error::new_spanned(
-									other,
-									"unknown belongs_to option",
-								));
-							}
-						}
-					}
-					navigation = Some(NavigationAttr { via });
+					navigation = Some(parse_simple_belongs_to(&inner)?);
 				}
 				_ => {}
 			}
@@ -650,7 +752,271 @@ fn extract_navigation_attr(
 	Ok(navigation)
 }
 
-fn extract_join_value_inner(ty: &syn::Type) -> Option<syn::Type> {
+fn parse_simple_belongs_to(
+	list: &syn::MetaList,
+) -> syn::Result<NavigationAttr> {
+	let mut attr = NavigationAttr::belongs_to_default();
+	for option in list.nested.iter() {
+		match option {
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("via") =>
+			{
+				if attr.fk.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `via` option",
+					));
+				}
+				attr.fk =
+					Some(parse_string_lit(&nv.lit, "via must be a string")?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("target") =>
+			{
+				if attr.explicit_target.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `target` option",
+					));
+				}
+				attr.explicit_target =
+					Some(parse_type_lit(&nv.lit, "invalid target type")?);
+			}
+			_ => {
+				return Err(syn::Error::new_spanned(
+					option,
+					"unknown belongs_to option",
+				));
+			}
+		}
+	}
+	Ok(attr)
+}
+
+fn parse_rel_navigation(list: &syn::MetaList) -> syn::Result<NavigationAttr> {
+	let mut relation_kind: Option<RelationKind> = None;
+	let mut fk: Option<String> = None;
+	let mut inverse: Option<String> = None;
+	let mut through: Option<syn::Type> = None;
+	let mut self_fk: Option<String> = None;
+	let mut other_fk: Option<String> = None;
+	let mut other_pk: Option<String> = None;
+	let mut explicit_target: Option<syn::Type> = None;
+
+	for option in list.nested.iter() {
+		match option {
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("belongs_to") =>
+			{
+				ensure_relation_kind(
+					&relation_kind,
+					RelationKind::BelongsTo,
+					nv.span(),
+				)?;
+				relation_kind = Some(RelationKind::BelongsTo);
+				explicit_target =
+					Some(parse_type_lit(&nv.lit, "invalid belongs_to target")?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("has_one") =>
+			{
+				ensure_relation_kind(
+					&relation_kind,
+					RelationKind::HasOne,
+					nv.span(),
+				)?;
+				relation_kind = Some(RelationKind::HasOne);
+				explicit_target =
+					Some(parse_type_lit(&nv.lit, "invalid has_one target")?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("has_many") =>
+			{
+				ensure_relation_kind(
+					&relation_kind,
+					RelationKind::HasMany,
+					nv.span(),
+				)?;
+				relation_kind = Some(RelationKind::HasMany);
+				explicit_target =
+					Some(parse_type_lit(&nv.lit, "invalid has_many target")?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("many_to_many") =>
+			{
+				ensure_relation_kind(
+					&relation_kind,
+					RelationKind::ManyToMany,
+					nv.span(),
+				)?;
+				relation_kind = Some(RelationKind::ManyToMany);
+				explicit_target = Some(parse_type_lit(
+					&nv.lit,
+					"invalid many_to_many target",
+				)?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("fk") => {
+				if fk.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `fk` option",
+					));
+				}
+				fk = Some(parse_string_lit(&nv.lit, "fk must be a string")?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("inverse") =>
+			{
+				if inverse.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `inverse` option",
+					));
+				}
+				inverse = Some(parse_string_lit(
+					&nv.lit,
+					"inverse must be a string",
+				)?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("through") =>
+			{
+				if through.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `through` option",
+					));
+				}
+				through =
+					Some(parse_type_lit(&nv.lit, "invalid through type")?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("self_fk") =>
+			{
+				if self_fk.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `self_fk` option",
+					));
+				}
+				self_fk = Some(parse_string_lit(
+					&nv.lit,
+					"self_fk must be a string",
+				)?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("other_fk") =>
+			{
+				if other_fk.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `other_fk` option",
+					));
+				}
+				other_fk = Some(parse_string_lit(
+					&nv.lit,
+					"other_fk must be a string",
+				)?);
+			}
+			NestedMeta::Meta(Meta::NameValue(nv))
+				if nv.path.is_ident("other_pk") =>
+			{
+				if other_pk.is_some() {
+					return Err(syn::Error::new_spanned(
+						nv,
+						"duplicate `other_pk` option",
+					));
+				}
+				other_pk = Some(parse_string_lit(
+					&nv.lit,
+					"other_pk must be a string",
+				)?);
+			}
+			_ => {
+				return Err(syn::Error::new_spanned(
+					option,
+					"unknown #[sqlxo(rel(...))] option",
+				));
+			}
+		}
+	}
+
+	let relation_kind = relation_kind.ok_or_else(|| {
+		syn::Error::new(
+			list.span(),
+			"#[sqlxo(rel(...))] requires a relation kind",
+		)
+	})?;
+	let mut base = NavigationAttr::new(relation_kind);
+	base.explicit_target = explicit_target;
+	base.fk = fk;
+	base.inverse = inverse;
+	base.through = through;
+	base.self_fk = self_fk;
+	base.other_fk = other_fk;
+	base.other_pk = other_pk;
+	Ok(base)
+}
+
+fn ensure_relation_kind(
+	attr_kind: &Option<RelationKind>,
+	kind: RelationKind,
+	span: proc_macro2::Span,
+) -> syn::Result<()> {
+	if let Some(current) = attr_kind {
+		if *current != kind {
+			return Err(syn::Error::new(
+				span,
+				"multiple relation kinds specified in #[sqlxo(rel(...))]",
+			));
+		}
+	}
+	Ok(())
+}
+
+fn parse_string_lit(lit: &Lit, msg: &str) -> syn::Result<String> {
+	match lit {
+		Lit::Str(s) => Ok(s.value()),
+		other => Err(syn::Error::new_spanned(other, msg)),
+	}
+}
+
+fn parse_type_lit(lit: &Lit, msg: &str) -> syn::Result<syn::Type> {
+	match lit {
+		Lit::Str(s) => syn::parse_str::<syn::Type>(&s.value())
+			.map_err(|_| syn::Error::new_spanned(lit, msg)),
+		other => Err(syn::Error::new_spanned(other, msg)),
+	}
+}
+
+fn types_match(a: &syn::Type, b: &syn::Type) -> bool {
+	let mut a_tokens = proc_macro2::TokenStream::new();
+	let mut b_tokens = proc_macro2::TokenStream::new();
+	a.to_tokens(&mut a_tokens);
+	b.to_tokens(&mut b_tokens);
+	a_tokens.to_string() == b_tokens.to_string()
+}
+
+fn type_ident_string(ty: &syn::Type) -> Option<String> {
+	match ty {
+		syn::Type::Path(path) => {
+			path.path.segments.last().map(|seg| seg.ident.to_string())
+		}
+		_ => None,
+	}
+}
+
+fn type_to_table_name(ty: &syn::Type) -> syn::Result<String> {
+	let ident = type_ident_string(ty).ok_or_else(|| {
+		syn::Error::new_spanned(
+			ty,
+			"unsupported type path in #[sqlxo(rel(...))]",
+		)
+	})?;
+	Ok(ident.to_snake_case())
+}
+
+fn extract_join_value_inner(ty: &syn::Type) -> Option<JoinValueInner> {
 	match ty {
 		syn::Type::Path(type_path) => {
 			let segment = type_path.path.segments.last()?;
@@ -658,6 +1024,36 @@ fn extract_join_value_inner(ty: &syn::Type) -> Option<syn::Type> {
 				return None;
 			}
 
+			if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+			{
+				if let Some(syn::GenericArgument::Type(inner)) =
+					args.args.first()
+				{
+					return match extract_vec_inner(inner) {
+						Some(vec_inner) => Some(JoinValueInner {
+							ty:            vec_inner,
+							is_collection: true,
+						}),
+						None => Some(JoinValueInner {
+							ty:            inner.clone(),
+							is_collection: false,
+						}),
+					};
+				}
+			}
+			None
+		}
+		_ => None,
+	}
+}
+
+fn extract_vec_inner(ty: &syn::Type) -> Option<syn::Type> {
+	match ty {
+		syn::Type::Path(type_path) => {
+			let segment = type_path.path.segments.last()?;
+			if segment.ident != "Vec" {
+				return None;
+			}
 			if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
 			{
 				if let Some(syn::GenericArgument::Type(inner)) =
@@ -804,11 +1200,15 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 	let mut column_type_aliases = Vec::new();
 
 	let mut pk_field: Option<String> = None;
+	let mut pk_field_ident: Option<Ident> = None;
 	let mut pk_field_ty: Option<syn::Type> = None;
+	let mut pk_field_specs: Vec<(Ident, syn::Type)> = Vec::new();
 	let mut pk_columns: Vec<String> = Vec::new();
 	let mut fks: Vec<FkSpec> = Vec::new();
+	let mut manual_join_specs: Vec<ManualJoinSpec> = Vec::new();
 	let mut pending_navigation: Vec<PendingNavigation> = Vec::new();
 	let mut navigation_fields: Vec<NavigationFieldSpec> = Vec::new();
+	let mut collection_navigation_fields: Vec<NavigationFieldSpec> = Vec::new();
 	let mut db_fields: Vec<DbFieldSpec> = Vec::new();
 	let mut skip_fields: Vec<SkipFieldSpec> = Vec::new();
 
@@ -827,7 +1227,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			Err(e) => return e.to_compile_error().into(),
 		};
 
-		if let Some(attr) = navigation_attr {
+		if let Some(mut attr) = navigation_attr {
 			if !is_sqlx_skip {
 				return Error::new_spanned(
 					field,
@@ -837,7 +1237,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				.into();
 			}
 
-			let Some(inner_ty) = extract_join_value_inner(ty) else {
+			let Some(inner) = extract_join_value_inner(ty) else {
 				return Error::new_spanned(
 					ty,
 					"navigation properties must use JoinValue<T>",
@@ -846,15 +1246,53 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				.into();
 			};
 
-			let via = attr
-				.via
-				.unwrap_or_else(|| format!("{}_id", field_name_snake));
+			match attr.kind {
+				RelationKind::BelongsTo | RelationKind::HasOne => {
+					if inner.is_collection {
+						return Error::new_spanned(
+							field,
+							"belongs_to/has_one navigation must use \
+							 JoinValue<T>",
+						)
+						.to_compile_error()
+						.into();
+					}
+				}
+				RelationKind::HasMany | RelationKind::ManyToMany => {
+					if !inner.is_collection {
+						return Error::new_spanned(
+							field,
+							"has_many/many_to_many navigation must use \
+							 JoinValue<Vec<T>>",
+						)
+						.to_compile_error()
+						.into();
+					}
+				}
+			}
+
+			if let Some(explicit) = &attr.explicit_target {
+				if !types_match(explicit, &inner.ty) {
+					return Error::new_spanned(
+						field,
+						"#[sqlxo(rel(...))] target type must match the \
+						 JoinValue<T> inner type",
+					)
+					.to_compile_error()
+					.into();
+				}
+			}
+
+			if attr.fk.is_none() {
+				attr.fk = Some(format!("{}_id", field_name_snake));
+			}
 
 			pending_navigation.push(PendingNavigation {
-				field_ident:    field_ident.clone(),
-				field_name:     field_name_snake.clone(),
-				ty:             inner_ty,
-				via_field_name: via,
+				field_ident: field_ident.clone(),
+				field_name: field_name_snake.clone(),
+				ty: inner.ty,
+				attr,
+				_is_collection: inner.is_collection,
 			});
 
 			skip_fields.push(SkipFieldSpec {
@@ -902,7 +1340,9 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 						.into();
 				}
 				pk_field = Some(field_name_snake.clone());
+				pk_field_ident = Some(field_ident.clone());
 				pk_field_ty = Some(ty.clone());
+				pk_field_specs.push((field_ident.clone(), ty.clone()));
 				pk_columns.push(field_name_snake.clone());
 			}
 
@@ -1283,36 +1723,327 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 		}
 	}
 
-	let (join_variants, join_descriptor_arms) =
-		build_join_codegen(struct_ident, &table_name, &fks);
-
 	for pending in pending_navigation {
-		let fk = match fks
-			.iter_mut()
-			.find(|fk| fk.fk_field_snake == pending.via_field_name)
-		{
-			Some(fk) => fk,
-			None => {
-				return Error::new(
-					struct_ident.span(),
-					format!(
-						"navigation property `{}` references unknown foreign \
-						 key `{}`",
-						pending.field_name, pending.via_field_name
-					),
-				)
-				.to_compile_error()
-				.into()
-			}
-		};
-		fk.related_ty = Some(pending.ty.clone());
+		match pending.attr.kind {
+			RelationKind::BelongsTo => {
+				let via_field_name = pending
+					.attr
+					.fk
+					.clone()
+					.expect("fk should be set on pending navigation");
+				let fk = match fks
+					.iter_mut()
+					.find(|fk| fk.fk_field_snake == via_field_name)
+				{
+					Some(fk) => fk,
+					None => {
+						return Error::new(
+							struct_ident.span(),
+							format!(
+								"navigation property `{}` references unknown \
+								 foreign key `{}`",
+								pending.field_name, via_field_name
+							),
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				fk.related_ty = Some(pending.ty.clone());
 
-		navigation_fields.push(NavigationFieldSpec {
-			field_ident:     pending.field_ident.clone(),
-			join_identifier: fk.friendly_name.clone(),
-			related_ty:      pending.ty.clone(),
-		});
+				navigation_fields.push(NavigationFieldSpec {
+					field_ident:     pending.field_ident.clone(),
+					join_identifier: fk.friendly_name.clone(),
+					related_ty:      pending.ty.clone(),
+				});
+			}
+			RelationKind::HasOne => {
+				let target_ty = match pending.attr.explicit_target.clone() {
+					Some(ty) => ty,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(has_one = \"Type\"))] requires a \
+							 target type",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let pk_field_name = match pk_columns.first().cloned() {
+					Some(name) => name,
+					None => {
+						return Error::new(
+							struct_ident.span(),
+							"has_one navigation requires a primary key field",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let right_table = match type_to_table_name(&target_ty) {
+					Ok(name) => name,
+					Err(err) => return err.to_compile_error().into(),
+				};
+				let target_ident = match type_ident_string(&target_ty) {
+					Some(name) => name,
+					None => {
+						return Error::new_spanned(
+							&target_ty,
+							"unsupported has_one target type",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let target_pascal = target_ident.to_pascal_case();
+				let field_name_pascal = pending.field_name.to_pascal_case();
+				let alias_segment = derive_alias_segment(&pending.field_name);
+				let friendly_name = derive_join_label(&pending.field_name);
+				let variant_ident = format_ident!(
+					"{}To{}By{}",
+					struct_ident,
+					target_pascal,
+					field_name_pascal
+				);
+				let right_field = match pending.attr.fk.clone() {
+					Some(value) => value,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(has_one = ...))] requires `fk = \
+							 \"...\"` specifying the foreign key column on \
+							 the related table",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+
+				manual_join_specs.push(ManualJoinSpec {
+					variant_ident,
+					friendly_name: friendly_name.clone(),
+					alias_segment,
+					left_field: pk_field_name.clone(),
+					right_table,
+					right_field,
+					related_ty: Some(pending.ty.clone()),
+					through: None,
+				});
+
+				navigation_fields.push(NavigationFieldSpec {
+					field_ident:     pending.field_ident.clone(),
+					join_identifier: friendly_name,
+					related_ty:      pending.ty.clone(),
+				});
+			}
+			RelationKind::HasMany => {
+				let target_ty = match pending.attr.explicit_target.clone() {
+					Some(ty) => ty,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(has_many = \"Type\"))] requires a \
+							 target type",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let pk_field_name = match pk_columns.first().cloned() {
+					Some(name) => name,
+					None => {
+						return Error::new(
+							struct_ident.span(),
+							"has_many navigation requires a primary key field",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let right_table = match type_to_table_name(&target_ty) {
+					Ok(name) => name,
+					Err(err) => return err.to_compile_error().into(),
+				};
+				let target_ident = match type_ident_string(&target_ty) {
+					Some(name) => name,
+					None => {
+						return Error::new_spanned(
+							&target_ty,
+							"unsupported has_many target type",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let target_pascal = target_ident.to_pascal_case();
+				let field_name_pascal = pending.field_name.to_pascal_case();
+				let alias_segment = derive_alias_segment(&pending.field_name);
+				let friendly_name = derive_join_label(&pending.field_name);
+				let variant_ident = format_ident!(
+					"{}To{}By{}",
+					struct_ident,
+					target_pascal,
+					field_name_pascal
+				);
+				let right_field = match pending.attr.fk.clone() {
+					Some(value) => value,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(has_many = ...))] requires `fk = \
+							 \"...\"` specifying the foreign key column on \
+							 the related table",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+
+				manual_join_specs.push(ManualJoinSpec {
+					variant_ident,
+					friendly_name: friendly_name.clone(),
+					alias_segment,
+					left_field: pk_field_name.clone(),
+					right_table,
+					right_field,
+					related_ty: Some(pending.ty.clone()),
+					through: None,
+				});
+
+				collection_navigation_fields.push(NavigationFieldSpec {
+					field_ident:     pending.field_ident.clone(),
+					join_identifier: friendly_name,
+					related_ty:      pending.ty.clone(),
+				});
+			}
+			RelationKind::ManyToMany => {
+				let target_ty = match pending.attr.explicit_target.clone() {
+					Some(ty) => ty,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(many_to_many = \"Type\"))] requires \
+							 a target type",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let through_ty = match pending.attr.through.clone() {
+					Some(ty) => ty,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(many_to_many = ...))] requires \
+							 `through = \"Pivot\"`",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let pk_field_name = match pk_columns.first().cloned() {
+					Some(name) => name,
+					None => {
+						return Error::new(
+							struct_ident.span(),
+							"many_to_many navigation requires a primary key \
+							 field",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let right_table = match type_to_table_name(&target_ty) {
+					Ok(name) => name,
+					Err(err) => return err.to_compile_error().into(),
+				};
+				let through_table = match type_to_table_name(&through_ty) {
+					Ok(name) => name,
+					Err(err) => return err.to_compile_error().into(),
+				};
+				let target_ident = match type_ident_string(&target_ty) {
+					Some(name) => name,
+					None => {
+						return Error::new_spanned(
+							&target_ty,
+							"unsupported many_to_many target type",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let target_pascal = target_ident.to_pascal_case();
+				let field_name_pascal = pending.field_name.to_pascal_case();
+				let alias_segment = derive_alias_segment(&pending.field_name);
+				let friendly_name = derive_join_label(&pending.field_name);
+				let variant_ident = format_ident!(
+					"{}To{}By{}",
+					struct_ident,
+					target_pascal,
+					field_name_pascal
+				);
+				let self_fk = match pending.attr.self_fk.clone() {
+					Some(value) => value,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(many_to_many = ...))] requires \
+							 `self_fk = \"...\"` referencing the pivot column \
+							 pointing to this model",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let other_fk = match pending.attr.other_fk.clone() {
+					Some(value) => value,
+					None => {
+						return Error::new(
+							pending.field_ident.span(),
+							"#[sqlxo(rel(many_to_many = ...))] requires \
+							 `other_fk = \"...\"` referencing the pivot \
+							 column pointing to the related model",
+						)
+						.to_compile_error()
+						.into()
+					}
+				};
+				let right_field = pending
+					.attr
+					.other_pk
+					.clone()
+					.unwrap_or_else(|| "id".to_string());
+
+				let through_alias = format!("{}__pivot__", pending.field_name);
+
+				manual_join_specs.push(ManualJoinSpec {
+					variant_ident,
+					friendly_name: friendly_name.clone(),
+					alias_segment,
+					left_field: other_fk,
+					right_table,
+					right_field,
+					related_ty: Some(pending.ty.clone()),
+					through: Some(ThroughSpec {
+						table:         through_table,
+						alias_segment: through_alias,
+						left_field:    pk_field_name.clone(),
+						right_field:   self_fk,
+					}),
+				});
+
+				collection_navigation_fields.push(NavigationFieldSpec {
+					field_ident:     pending.field_ident.clone(),
+					join_identifier: friendly_name,
+					related_ty:      pending.ty.clone(),
+				});
+			}
+		}
 	}
+
+	let (join_variants, join_descriptor_arms) =
+		build_join_codegen(struct_ident, &table_name, &fks, &manual_join_specs);
 
 	let presence_field_name = pk_field
 		.clone()
@@ -1351,10 +2082,47 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 	if pk_columns.is_empty() {
 		pk_columns.push(presence_field_name.clone());
 	}
+	if !collection_navigation_fields.is_empty() && pk_field_ident.is_none() {
+		return Error::new(
+			struct_ident.span(),
+			"collection navigation requires #[primary_key]",
+		)
+		.to_compile_error()
+		.into();
+	}
+	if !collection_navigation_fields.is_empty() && pk_field_ty.is_none() {
+		return Error::new(
+			struct_ident.span(),
+			"collection navigation requires #[primary_key]",
+		)
+		.to_compile_error()
+		.into();
+	}
 	let pk_column_lits: Vec<_> = pk_columns
 		.iter()
 		.map(|col| syn::LitStr::new(col, proc_macro2::Span::call_site()))
 		.collect();
+	let (join_key_type, join_key_expr) = if !pk_field_specs.is_empty() {
+		if pk_field_specs.len() == 1 {
+			let (ident, ty) = &pk_field_specs[0];
+			(quote! { #ty }, quote! { self.#ident.clone() })
+		} else {
+			let key_types: Vec<_> =
+				pk_field_specs.iter().map(|(_, ty)| ty).collect();
+			let key_idents: Vec<_> =
+				pk_field_specs.iter().map(|(ident, _)| ident).collect();
+			(
+				quote! { ( #( #key_types ),* ) },
+				quote! { ( #( self.#key_idents.clone() ),* ) },
+			)
+		}
+	} else if let Some(field) = db_fields.first() {
+		let ident = &field.field_ident;
+		let ty = &field.ty;
+		(quote! { #ty }, quote! { self.#ident.clone() })
+	} else {
+		(quote! { () }, quote! { () })
+	};
 	let join_projection_push: Vec<proc_macro2::TokenStream> = db_fields
 		.iter()
 		.map(|field| {
@@ -1414,12 +2182,108 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			format_ident!("{}", name)
 		})
 		.collect();
+	let collection_nav_flags: Vec<Ident> = collection_navigation_fields
+		.iter()
+		.map(|nav| {
+			let name = format!("__sqlxo_nav_loaded_{}", nav.field_ident);
+			format_ident!("{}", name)
+		})
+		.collect();
+	let collection_active_flags: Vec<Ident> = collection_navigation_fields
+		.iter()
+		.map(|nav| {
+			let name = format!("__sqlxo_collection_active_{}", nav.field_ident);
+			format_ident!("{}", name)
+		})
+		.collect();
+	let collection_identifier_match: Vec<proc_macro2::TokenStream> =
+		collection_navigation_fields
+			.iter()
+			.map(|nav| {
+				let identifier = syn::LitStr::new(
+					&nav.join_identifier,
+					proc_macro2::Span::call_site(),
+				);
+				quote! { #identifier => return true }
+			})
+			.collect();
+	let merge_collection_flag_match: Vec<proc_macro2::TokenStream> =
+		collection_navigation_fields
+			.iter()
+			.enumerate()
+			.map(|(idx, nav)| {
+				let identifier = syn::LitStr::new(
+					&nav.join_identifier,
+					proc_macro2::Span::call_site(),
+				);
+				let flag = &collection_active_flags[idx];
+				quote! {
+					#identifier => {
+						#flag = true;
+						any_active = true;
+					}
+				}
+			})
+			.collect();
+	let merge_collection_apply: Vec<proc_macro2::TokenStream> =
+		collection_navigation_fields
+			.iter()
+			.enumerate()
+			.map(|(idx, nav)| {
+				let flag = &collection_active_flags[idx];
+				let field_ident = &nav.field_ident;
+				quote! {
+					if #flag {
+						let incoming = row.#field_ident;
+						#root::merge_join_collections(
+							&mut existing.#field_ident,
+							incoming,
+						);
+					}
+				}
+			})
+			.collect();
 	let collect_join_columns_match: Vec<proc_macro2::TokenStream> =
 		navigation_fields
 			.iter()
 			.enumerate()
 			.map(|(idx, nav)| {
 				let flag = &nav_flags[idx];
+				let identifier = syn::LitStr::new(
+					&nav.join_identifier,
+					proc_macro2::Span::call_site(),
+				);
+				let related_ty = &nav.related_ty;
+				quote! {
+					#identifier => {
+						if !#flag {
+							<#related_ty as #root::JoinLoadable>::project_join_columns(
+								alias.as_str(),
+								&mut cols,
+							);
+							if let Some(child_path) = child_path.clone() {
+								let mut child_paths: #root::smallvec::SmallVec<[#root::JoinPath; 1]> =
+									#root::smallvec::SmallVec::new();
+								child_paths.push(child_path);
+								let nested_cols =
+									<#related_ty as #root::JoinNavigationModel>::collect_join_columns(
+										Some(child_paths.as_slice()),
+										alias.as_str()
+									);
+								cols.extend(nested_cols);
+							}
+							#flag = true;
+						}
+					}
+				}
+			})
+			.collect();
+	let collect_collection_join_columns_match: Vec<proc_macro2::TokenStream> =
+		collection_navigation_fields
+			.iter()
+			.enumerate()
+			.map(|(idx, nav)| {
+				let flag = &collection_nav_flags[idx];
 				let identifier = syn::LitStr::new(
 					&nav.join_identifier,
 					proc_macro2::Span::call_site(),
@@ -1489,47 +2353,211 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				}
 			})
 			.collect();
-	let nav_flag_collect_defs = nav_flags.clone();
-	let nav_flag_hydrate_defs = nav_flags.clone();
-	let web_join_match: Vec<proc_macro2::TokenStream> = fks
+	let hydrate_collection_navigation_match: Vec<
+		proc_macro2::TokenStream,
+	> = collection_navigation_fields
 		.iter()
-		.map(|fk| {
-			let join_variant = &fk.variant_ident;
-			let friendly = syn::LitStr::new(
-				&fk.friendly_name,
+		.enumerate()
+		.map(|(idx, nav)| {
+			let flag = &collection_nav_flags[idx];
+			let identifier = syn::LitStr::new(
+				&nav.join_identifier,
 				proc_macro2::Span::call_site(),
 			);
-			match &fk.related_ty {
-				Some(ty) => {
-					quote! {
-						#friendly => {
-							if rest.is_empty() {
-								return Some(#join_ident::#join_variant.path(kind));
-							}
-							if let Some(nested) =
-								<#ty as #root::WebJoinGraph>::resolve_join_path(rest, kind)
-							{
-								let mut base = #join_ident::#join_variant.path(kind);
-								base.append(&nested);
-								return Some(base);
-							}
-							None
-						}
+			let related_ty = &nav.related_ty;
+			let field_ident = &nav.field_ident;
+			quote! {
+				#identifier => {
+					if #flag {
+						continue;
 					}
-				}
-				None => {
-					quote! {
-						#friendly => {
-							if rest.is_empty() {
-								return Some(#join_ident::#join_variant.path(kind));
-							}
-							None
+					let mut values = Vec::new();
+					if let Some(mut v) =
+						<#related_ty as #root::JoinLoadable>::hydrate_from_join(row, alias.as_str())?
+					{
+						if let Some(child_path) = child_path.clone() {
+							let mut child_paths: #root::smallvec::SmallVec<[#root::JoinPath; 1]> =
+								#root::smallvec::SmallVec::new();
+							child_paths.push(child_path);
+							v.hydrate_navigations(
+								Some(child_paths.as_slice()),
+								row,
+								alias.as_str(),
+							)?;
 						}
+						values.push(v);
 					}
+					self.#field_ident = #root::JoinValue::Loaded(values);
+					#flag = true;
 				}
 			}
 		})
 		.collect();
+	let nav_flag_collect_defs = nav_flags.clone();
+	let nav_flag_hydrate_defs = nav_flags.clone();
+	let collection_nav_flag_collect_defs = collection_nav_flags.clone();
+	let collection_nav_flag_hydrate_defs = collection_nav_flags.clone();
+	let collection_helper_impl = if collection_navigation_fields.is_empty() {
+		quote! {
+			fn has_collection_joins(
+				_joins: Option<&[#root::JoinPath]>,
+			) -> bool {
+				false
+			}
+
+			fn merge_collection_rows(
+				rows: Vec<Self>,
+				_joins: Option<&[#root::JoinPath]>,
+			) -> Vec<Self> {
+				rows
+			}
+		}
+	} else {
+		let pk_ident = pk_field_ident.clone().unwrap();
+		let pk_ty = pk_field_ty.clone().unwrap();
+		let collection_identifier_match = &collection_identifier_match;
+		let merge_collection_flag_match = &merge_collection_flag_match;
+		let merge_collection_apply = &merge_collection_apply;
+		let collection_active_flags = &collection_active_flags;
+
+		quote! {
+			fn has_collection_joins(
+				joins: Option<&[#root::JoinPath]>,
+			) -> bool {
+				if let Some(joins) = joins {
+					for path in joins {
+						if let Some(first) = path.segments().first() {
+							match first.descriptor.identifier {
+								#(#collection_identifier_match,)*
+								_ => {}
+							}
+						}
+					}
+				}
+				false
+			}
+
+			fn merge_collection_rows(
+				rows: Vec<Self>,
+				joins: Option<&[#root::JoinPath]>,
+			) -> Vec<Self> {
+				if rows.is_empty() {
+					return rows;
+				}
+				let Some(joins) = joins else {
+					return rows;
+				};
+
+				let mut any_active = false;
+				#(let mut #collection_active_flags = false;)*
+
+				for path in joins {
+					if let Some(first) = path.segments().first() {
+						match first.descriptor.identifier {
+							#(#merge_collection_flag_match,)*
+							_ => {}
+						}
+					}
+				}
+
+				if !any_active {
+					return rows;
+				}
+
+				let mut merged: ::std::vec::Vec<Self> =
+					::std::vec::Vec::new();
+				let mut seen: ::std::collections::HashMap<#pk_ty, usize> =
+					::std::collections::HashMap::new();
+
+				for mut row in rows {
+					let key = row.#pk_ident.clone();
+					if let Some(&idx) = seen.get(&key) {
+						let existing = &mut merged[idx];
+						#(#merge_collection_apply)*
+					} else {
+						seen.insert(key, merged.len());
+						merged.push(row);
+					}
+				}
+
+				merged
+			}
+		}
+	};
+	let web_join_match_fk = fks.iter().map(|fk| {
+		let join_variant = &fk.variant_ident;
+		let friendly =
+			syn::LitStr::new(&fk.friendly_name, proc_macro2::Span::call_site());
+		match &fk.related_ty {
+			Some(ty) => {
+				quote! {
+					#friendly => {
+						if rest.is_empty() {
+							return Some(#join_ident::#join_variant.path(kind));
+						}
+						if let Some(nested) =
+							<#ty as #root::WebJoinGraph>::resolve_join_path(rest, kind)
+						{
+							let mut base = #join_ident::#join_variant.path(kind);
+							base.append(&nested);
+							return Some(base);
+						}
+						None
+					}
+				}
+			}
+			None => {
+				quote! {
+					#friendly => {
+						if rest.is_empty() {
+							return Some(#join_ident::#join_variant.path(kind));
+						}
+						None
+					}
+				}
+			}
+		}
+	});
+
+	let web_join_match_manual = manual_join_specs.iter().map(|spec| {
+		let join_variant = &spec.variant_ident;
+		let friendly = syn::LitStr::new(
+			&spec.friendly_name,
+			proc_macro2::Span::call_site(),
+		);
+		match &spec.related_ty {
+			Some(ty) => {
+				quote! {
+					#friendly => {
+						if rest.is_empty() {
+							return Some(#join_ident::#join_variant.path(kind));
+						}
+						if let Some(nested) =
+							<#ty as #root::WebJoinGraph>::resolve_join_path(rest, kind)
+						{
+							let mut base = #join_ident::#join_variant.path(kind);
+							base.append(&nested);
+							return Some(base);
+						}
+						None
+					}
+				}
+			}
+			None => {
+				quote! {
+					#friendly => {
+						if rest.is_empty() {
+							return Some(#join_ident::#join_variant.path(kind));
+						}
+						None
+					}
+				}
+			}
+		}
+	});
+
+	let web_join_match: Vec<proc_macro2::TokenStream> =
+		web_join_match_fk.chain(web_join_match_manual).collect();
 
 	let out = quote! {
 
@@ -1650,6 +2678,14 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 			}
 		}
 
+		impl #root::JoinIdentifiable for #struct_ident {
+			type Key = #join_key_type;
+
+			fn join_key(&self) -> Self::Key {
+				#join_key_expr
+			}
+		}
+
 
 		impl #root::JoinNavigationModel for #struct_ident {
 			fn collect_join_columns(
@@ -1659,6 +2695,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				let mut cols: #root::smallvec::SmallVec<[#root::AliasedColumn; 4]> =
 					#root::smallvec::SmallVec::new();
 				#(let mut #nav_flag_collect_defs = false;)*
+				#(let mut #collection_nav_flag_collect_defs = false;)*
 
 				if let Some(joins) = joins {
 					for path in joins {
@@ -1669,6 +2706,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 							let alias = alias_builder.clone();
 							match first.descriptor.identifier {
 								#(#collect_join_columns_match,)*
+								#(#collect_collection_join_columns_match,)*
 								_ => {}
 							}
 						}
@@ -1685,6 +2723,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 				base_alias: &str,
 			) -> Result<(), sqlx::Error> {
 				#(let mut #nav_flag_hydrate_defs = false;)*
+				#(let mut #collection_nav_flag_hydrate_defs = false;)*
 
 				if let Some(joins) = joins {
 					for path in joins {
@@ -1695,6 +2734,7 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 							let alias = alias_builder.clone();
 							match first.descriptor.identifier {
 								#(#hydrate_navigation_match,)*
+								#(#hydrate_collection_navigation_match,)*
 								_ => {}
 							}
 						}
@@ -1703,6 +2743,8 @@ pub fn derive_query(input: TokenStream) -> TokenStream {
 
 				Ok(())
 			}
+
+			#collection_helper_impl
 		}
 
 		impl #root::WebJoinGraph for #struct_ident {
@@ -3666,7 +4708,10 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		}
 
 		if let Some(attr) = navigation_attr {
-			let Some(inner_ty) = extract_join_value_inner(&field.ty) else {
+			if attr.kind != RelationKind::BelongsTo {
+				continue;
+			}
+			let Some(inner) = extract_join_value_inner(&field.ty) else {
 				return Error::new_spanned(
 					&field.ty,
 					"navigation properties must use JoinValue<T>",
@@ -3674,11 +4719,30 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				.to_compile_error()
 				.into();
 			};
-
+			if inner.is_collection {
+				return Error::new_spanned(
+					field,
+					"FullTextSearchable navigation joins only support \
+					 JoinValue<T>",
+				)
+				.to_compile_error()
+				.into();
+			}
+			if let Some(explicit) = &attr.explicit_target {
+				if !types_match(explicit, &inner.ty) {
+					return Error::new_spanned(
+						field,
+						"#[sqlxo(rel(...))] target type must match \
+						 JoinValue<T>",
+					)
+					.to_compile_error()
+					.into();
+				}
+			}
 			let via = attr
-				.via
+				.fk
+				.clone()
 				.unwrap_or_else(|| format!("{}_id", field_name_snake));
-
 			let fk = match fk_specs.iter().find(|fk| fk.fk_field_snake == via) {
 				Some(fk) => fk,
 				None => {
@@ -3716,7 +4780,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				config_variant,
 				join_variant: fk.variant_ident.clone(),
 				nested_variant,
-				related_ty: inner_ty,
+				related_ty: inner.ty.clone(),
 				label,
 				nested_label,
 			});

@@ -117,12 +117,29 @@ impl SqlWriter {
 		let mut alias_prefix = String::new();
 
 		for segment in path.segments() {
-			alias_prefix.push_str(segment.descriptor.alias_segment);
-			let right_alias = alias_prefix.clone();
 			let join_word = match segment.kind {
 				JoinKind::Inner => " INNER JOIN ",
 				JoinKind::Left => " LEFT JOIN ",
 			};
+
+			if let Some(through) = segment.descriptor.through {
+				let mut through_alias = alias_prefix.clone();
+				through_alias.push_str(through.alias_segment);
+				let clause = format!(
+					r#"{join}{table} AS "{alias}" ON "{left}"."{left_field}" = "{alias}"."{right_field}""#,
+					join = join_word,
+					table = through.table,
+					alias = &through_alias,
+					left = &left_alias,
+					left_field = through.left_field,
+					right_field = through.right_field,
+				);
+				self.qb.push(clause);
+				left_alias = through_alias;
+			}
+
+			alias_prefix.push_str(segment.descriptor.alias_segment);
+			let right_alias = alias_prefix.clone();
 
 			let clause = format!(
 				r#"{join}{table} AS "{alias}" ON "{left}"."{left_field}" = "{alias}"."{right_field}""#,

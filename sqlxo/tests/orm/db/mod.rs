@@ -1,4 +1,6 @@
 use crate::helpers::{
+	AppUser,
+	AppUserJoin,
 	HardDeleteItem,
 	HardDeleteItemColumn,
 	HardDeleteItemQuery,
@@ -43,11 +45,17 @@ use crate::helpers::{
 	ItemJoin,
 	ItemQuery,
 	ItemSort,
+	ItemTag,
 	Material,
 	MaterialColumn,
 	MaterialFullTextSearchJoin,
 	MaterialJoin,
+	MaterialQuery,
+	Profile,
 	Supplier,
+	Tag,
+	TagJoin,
+	TagQuery,
 };
 
 #[derive(Debug, Clone)]
@@ -137,6 +145,41 @@ async fn insert_item(item: &Item, pool: &PgPool) -> Result<(), sqlx::Error> {
     .bind(item.material_id)
     .execute(pool)
     .await.map(|_| ())
+}
+
+async fn insert_app_user(
+	user: &AppUser,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
+	sqlx::query(
+		r#"
+        INSERT INTO app_user (id, name)
+        VALUES ($1, $2)
+        "#,
+	)
+	.bind(user.id)
+	.bind(&user.name)
+	.execute(pool)
+	.await
+	.map(|_| ())
+}
+
+async fn insert_profile(
+	profile: &Profile,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
+	sqlx::query(
+		r#"
+        INSERT INTO profile (id, user_id, bio)
+        VALUES ($1, $2, $3)
+        "#,
+	)
+	.bind(profile.id)
+	.bind(profile.user_id)
+	.bind(&profile.bio)
+	.execute(pool)
+	.await
+	.map(|_| ())
 }
 
 #[tokio::test]
@@ -288,8 +331,9 @@ async fn full_text_search_includes_joined_table_fields() {
 	let pool = get_connection_pool().await;
 
 	let supplier = Supplier {
-		id:   Uuid::new_v4(),
-		name: "Alloy Works".into(),
+		id:        Uuid::new_v4(),
+		name:      "Alloy Works".into(),
+		materials: JoinValue::default(),
 	};
 	insert_supplier(&supplier, &pool).await.unwrap();
 
@@ -300,6 +344,7 @@ async fn full_text_search_includes_joined_table_fields() {
 		description: "rugged corrosion resistant".into(),
 		supplier_id: Some(supplier.id),
 		supplier:    JoinValue::default(),
+		items:       JoinValue::default(),
 	};
 	insert_material(&material, &pool).await.unwrap();
 
@@ -333,8 +378,9 @@ async fn full_text_search_supports_multi_hop_joined_fields() {
 	let pool = get_connection_pool().await;
 
 	let supplier = Supplier {
-		id:   Uuid::new_v4(),
-		name: "Acme Components".into(),
+		id:        Uuid::new_v4(),
+		name:      "Acme Components".into(),
+		materials: JoinValue::default(),
 	};
 	insert_supplier(&supplier, &pool).await.unwrap();
 
@@ -345,6 +391,7 @@ async fn full_text_search_supports_multi_hop_joined_fields() {
 		description: "support".into(),
 		supplier_id: Some(supplier.id),
 		supplier:    JoinValue::default(),
+		items:       JoinValue::default(),
 	};
 	insert_material(&material, &pool).await.unwrap();
 
@@ -395,8 +442,9 @@ async fn web_query_payload_executes_full_stack() {
 	let pool = get_connection_pool().await;
 
 	let supplier = Supplier {
-		id:   Uuid::new_v4(),
-		name: "Marine Supply Co".into(),
+		id:        Uuid::new_v4(),
+		name:      "Marine Supply Co".into(),
+		materials: JoinValue::default(),
 	};
 	insert_supplier(&supplier, &pool).await.unwrap();
 
@@ -407,6 +455,7 @@ async fn web_query_payload_executes_full_stack() {
 		description: "high grade".into(),
 		supplier_id: Some(supplier.id),
 		supplier:    JoinValue::default(),
+		items:       JoinValue::default(),
 	};
 	insert_material(&material, &pool).await.unwrap();
 
@@ -501,6 +550,35 @@ async fn insert_material(
 	.bind(&material.long_name)
 	.bind(&material.description)
 	.bind(material.supplier_id)
+	.execute(pool)
+	.await
+	.map(|_| ())
+}
+
+async fn insert_tag(tag: &Tag, pool: &PgPool) -> Result<(), sqlx::Error> {
+	sqlx::query("INSERT INTO tag (id, name) VALUES ($1, $2)")
+		.bind(tag.id)
+		.bind(&tag.name)
+		.execute(pool)
+		.await
+		.map(|_| ())
+}
+
+async fn insert_item_tag(
+	link: &ItemTag,
+	pool: &PgPool,
+) -> Result<(), sqlx::Error> {
+	sqlx::query(
+		r#"
+        INSERT INTO item_tag (id, item_id, tag_id, created_at, note)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+	)
+	.bind(link.id)
+	.bind(link.item_id)
+	.bind(link.tag_id)
+	.bind(link.created_at)
+	.bind(&link.note)
 	.execute(pool)
 	.await
 	.map(|_| ())
@@ -1277,6 +1355,67 @@ async fn navigation_loaded_with_join() {
 }
 
 #[tokio::test]
+async fn has_one_navigation_not_loaded_without_join() {
+	let pool = get_connection_pool().await;
+	let user = AppUser {
+		id:      Uuid::new_v4(),
+		name:    "has_one user".into(),
+		profile: JoinValue::NotLoaded,
+	};
+
+	insert_app_user(&user, &pool).await.unwrap();
+
+	let fetched: AppUser = QueryBuilder::<AppUser>::read()
+		.r#where(Expression::Leaf(crate::helpers::AppUserQuery::IdEq(
+			user.id,
+		)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	assert!(matches!(fetched.profile, JoinValue::NotLoaded));
+}
+
+#[tokio::test]
+async fn has_one_navigation_loaded_with_join() {
+	let pool = get_connection_pool().await;
+	let user = AppUser {
+		id:      Uuid::new_v4(),
+		name:    "has_one user".into(),
+		profile: JoinValue::NotLoaded,
+	};
+
+	insert_app_user(&user, &pool).await.unwrap();
+
+	let profile = Profile {
+		id:      Uuid::new_v4(),
+		user_id: user.id,
+		bio:     Some("bio".into()),
+	};
+	insert_profile(&profile, &pool).await.unwrap();
+
+	let fetched: AppUser = QueryBuilder::<AppUser>::read()
+		.r#where(Expression::Leaf(crate::helpers::AppUserQuery::IdEq(
+			user.id,
+		)))
+		.join(AppUserJoin::AppUserToProfileByProfile, JoinKind::Left)
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.profile {
+		JoinValue::Loaded(loaded) => {
+			assert_eq!(loaded.id, profile.id);
+			assert_eq!(loaded.user_id, profile.user_id);
+			assert_eq!(loaded.bio, profile.bio);
+		}
+		other => panic!("expected loaded profile, got {:?}", other),
+	}
+}
+
+#[tokio::test]
 async fn navigation_loaded_with_nested_join() {
 	let pool = get_connection_pool().await;
 	let supplier_id = Uuid::new_v4();
@@ -1334,6 +1473,377 @@ async fn navigation_loaded_with_nested_join() {
 			other => panic!("expected supplier join to load, got {:?}", other),
 		},
 		other => panic!("expected material join to load, got {:?}", other),
+	}
+}
+
+#[tokio::test]
+async fn has_many_navigation_hydrates_collections() {
+	let pool = get_connection_pool().await;
+
+	let supplier = Supplier {
+		id:        Uuid::new_v4(),
+		name:      "collection supplier".into(),
+		materials: JoinValue::default(),
+	};
+	insert_supplier(&supplier, &pool).await.unwrap();
+
+	let material = Material {
+		id:          Uuid::new_v4(),
+		name:        "collection material".into(),
+		long_name:   "collection long".into(),
+		description: "collection desc".into(),
+		supplier_id: Some(supplier.id),
+		supplier:    JoinValue::default(),
+		items:       JoinValue::default(),
+	};
+	insert_material(&material, &pool).await.unwrap();
+
+	let mut first = Item::default();
+	first.name = "first collection item".into();
+	first.material_id = Some(material.id);
+	insert_item(&first, &pool).await.unwrap();
+
+	let mut second = Item::default();
+	second.name = "second collection item".into();
+	second.material_id = Some(material.id);
+	insert_item(&second, &pool).await.unwrap();
+
+	let fetched: Material = QueryBuilder::<Material>::read()
+		.join(MaterialJoin::MaterialToItemByItems, JoinKind::Left)
+		.r#where(Expression::Leaf(MaterialQuery::IdEq(material.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.items {
+		JoinValue::Loaded(items) => {
+			assert_eq!(items.len(), 2);
+			let mut loaded_ids: Vec<Uuid> =
+				items.into_iter().map(|item| item.id).collect();
+			loaded_ids.sort();
+			let mut expected = vec![first.id, second.id];
+			expected.sort();
+			assert_eq!(loaded_ids, expected);
+		}
+		other => panic!("expected loaded items, got {:?}", other),
+	}
+}
+
+#[tokio::test]
+async fn has_many_join_dedupes_root_rows() {
+	let pool = get_connection_pool().await;
+
+	let supplier = Supplier {
+		id:        Uuid::new_v4(),
+		name:      "dedupe supplier".into(),
+		materials: JoinValue::default(),
+	};
+	insert_supplier(&supplier, &pool).await.unwrap();
+
+	let material = Material {
+		id:          Uuid::new_v4(),
+		name:        "dedupe material".into(),
+		long_name:   "dedupe long".into(),
+		description: "dedupe desc".into(),
+		supplier_id: Some(supplier.id),
+		supplier:    JoinValue::default(),
+		items:       JoinValue::default(),
+	};
+	insert_material(&material, &pool).await.unwrap();
+
+	let mut first = Item::default();
+	first.name = "dedupe first".into();
+	first.material_id = Some(material.id);
+	insert_item(&first, &pool).await.unwrap();
+
+	let mut second = Item::default();
+	second.name = "dedupe second".into();
+	second.material_id = Some(material.id);
+	insert_item(&second, &pool).await.unwrap();
+
+	let rows = QueryBuilder::<Material>::read()
+		.join(MaterialJoin::MaterialToItemByItems, JoinKind::Left)
+		.build()
+		.fetch_all(&pool)
+		.await
+		.unwrap();
+
+	assert_eq!(rows.len(), 1);
+	match &rows[0].items {
+		JoinValue::Loaded(items) => {
+			assert_eq!(items.len(), 2);
+		}
+		other => panic!("expected loaded collection, got {:?}", other),
+	}
+}
+
+#[tokio::test]
+async fn many_to_many_navigation_hydrates_tags() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+	insert_item(&item, &pool).await.unwrap();
+
+	let tag_one = Tag {
+		id:         Uuid::new_v4(),
+		name:       "utility".into(),
+		items:      JoinValue::default(),
+		item_links: JoinValue::default(),
+	};
+	let tag_two = Tag {
+		id:         Uuid::new_v4(),
+		name:       "hardware".into(),
+		items:      JoinValue::default(),
+		item_links: JoinValue::default(),
+	};
+	insert_tag(&tag_one, &pool).await.unwrap();
+	insert_tag(&tag_two, &pool).await.unwrap();
+
+	let link_one = ItemTag {
+		id:         Uuid::new_v4(),
+		item_id:    item.id,
+		tag_id:     tag_one.id,
+		created_at: chrono::Utc::now(),
+		note:       Some("primary tag".into()),
+		item:       JoinValue::default(),
+		tag:        JoinValue::default(),
+	};
+	let link_two = ItemTag {
+		id:         Uuid::new_v4(),
+		item_id:    item.id,
+		tag_id:     tag_two.id,
+		created_at: chrono::Utc::now(),
+		note:       None,
+		item:       JoinValue::default(),
+		tag:        JoinValue::default(),
+	};
+	insert_item_tag(&link_one, &pool).await.unwrap();
+	insert_item_tag(&link_two, &pool).await.unwrap();
+
+	let fetched: Item = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToTagByTags, JoinKind::Left)
+		.r#where(Expression::Leaf(ItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.tags {
+		JoinValue::Loaded(mut tags) => {
+			tags.sort_by_key(|t| t.name.clone());
+			assert_eq!(tags.len(), 2);
+			assert_eq!(tags[0].id, tag_two.id);
+			assert_eq!(tags[1].id, tag_one.id);
+		}
+		other => panic!("expected loaded tags, got {:?}", other),
+	}
+}
+
+#[tokio::test]
+async fn many_to_many_inverse_hydrates_items() {
+	let pool = get_connection_pool().await;
+	let mut item = Item::default();
+	item.name = "tagged item".into();
+	insert_item(&item, &pool).await.unwrap();
+
+	let tag = Tag {
+		id:         Uuid::new_v4(),
+		name:       "fastener".into(),
+		items:      JoinValue::default(),
+		item_links: JoinValue::default(),
+	};
+	insert_tag(&tag, &pool).await.unwrap();
+
+	let link = ItemTag {
+		id:         Uuid::new_v4(),
+		item_id:    item.id,
+		tag_id:     tag.id,
+		created_at: chrono::Utc::now(),
+		note:       None,
+		item:       JoinValue::default(),
+		tag:        JoinValue::default(),
+	};
+	insert_item_tag(&link, &pool).await.unwrap();
+
+	let fetched: Tag = QueryBuilder::<Tag>::read()
+		.join(TagJoin::TagToItemByItems, JoinKind::Left)
+		.r#where(Expression::Leaf(TagQuery::IdEq(tag.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.items {
+		JoinValue::Loaded(items) => {
+			assert_eq!(items.len(), 1);
+			assert_eq!(items[0].id, item.id);
+			assert_eq!(items[0].name, "tagged item");
+		}
+		other => panic!("expected loaded items, got {:?}", other),
+	}
+}
+
+#[tokio::test]
+async fn many_to_many_pivot_payload_hydrates() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+	insert_item(&item, &pool).await.unwrap();
+
+	let tag = Tag {
+		id:         Uuid::new_v4(),
+		name:       "pivot tag".into(),
+		items:      JoinValue::default(),
+		item_links: JoinValue::default(),
+	};
+	insert_tag(&tag, &pool).await.unwrap();
+
+	let link = ItemTag {
+		id:         Uuid::new_v4(),
+		item_id:    item.id,
+		tag_id:     tag.id,
+		created_at: chrono::Utc::now(),
+		note:       Some("link payload".into()),
+		item:       JoinValue::default(),
+		tag:        JoinValue::default(),
+	};
+	insert_item_tag(&link, &pool).await.unwrap();
+
+	let fetched: Item = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToItemTagByTagLinks, JoinKind::Left)
+		.r#where(Expression::Leaf(ItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.tag_links {
+		JoinValue::Loaded(mut links) => {
+			assert_eq!(links.len(), 1);
+			let entry = links.pop().unwrap();
+			assert_eq!(entry.note.as_deref(), Some("link payload"));
+			assert_eq!(entry.tag_id, tag.id);
+		}
+		other => panic!("expected pivot payload to hydrate, got {:?}", other),
+	}
+
+	assert!(matches!(fetched.tags, JoinValue::NotLoaded));
+}
+
+#[tokio::test]
+async fn many_to_many_inverse_pivot_payload_hydrates() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+	insert_item(&item, &pool).await.unwrap();
+
+	let tag = Tag {
+		id:         Uuid::new_v4(),
+		name:       "inverse pivot tag".into(),
+		items:      JoinValue::default(),
+		item_links: JoinValue::default(),
+	};
+	insert_tag(&tag, &pool).await.unwrap();
+
+	let link = ItemTag {
+		id:         Uuid::new_v4(),
+		item_id:    item.id,
+		tag_id:     tag.id,
+		created_at: chrono::Utc::now(),
+		note:       Some("inverse payload".into()),
+		item:       JoinValue::default(),
+		tag:        JoinValue::default(),
+	};
+	insert_item_tag(&link, &pool).await.unwrap();
+
+	let fetched: Tag = QueryBuilder::<Tag>::read()
+		.join(TagJoin::TagToItemTagByItemLinks, JoinKind::Left)
+		.r#where(Expression::Leaf(TagQuery::IdEq(tag.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.item_links {
+		JoinValue::Loaded(mut links) => {
+			assert_eq!(links.len(), 1);
+			let entry = links.pop().unwrap();
+			assert_eq!(entry.item_id, item.id);
+			assert_eq!(entry.note.as_deref(), Some("inverse payload"));
+		}
+		other => panic!("expected inverse pivot payload, got {:?}", other),
+	}
+
+	assert!(matches!(fetched.items, JoinValue::NotLoaded));
+}
+
+#[tokio::test]
+async fn many_to_many_can_load_tags_and_pivot_rows() {
+	let pool = get_connection_pool().await;
+	let item = Item::default();
+	insert_item(&item, &pool).await.unwrap();
+
+	let first_tag = Tag {
+		id:         Uuid::new_v4(),
+		name:       "tag-one".into(),
+		items:      JoinValue::default(),
+		item_links: JoinValue::default(),
+	};
+	let second_tag = Tag {
+		id:         Uuid::new_v4(),
+		name:       "tag-two".into(),
+		items:      JoinValue::default(),
+		item_links: JoinValue::default(),
+	};
+	insert_tag(&first_tag, &pool).await.unwrap();
+	insert_tag(&second_tag, &pool).await.unwrap();
+
+	let first_link = ItemTag {
+		id:         Uuid::new_v4(),
+		item_id:    item.id,
+		tag_id:     first_tag.id,
+		created_at: chrono::Utc::now(),
+		note:       Some("first-link".into()),
+		item:       JoinValue::default(),
+		tag:        JoinValue::default(),
+	};
+	let second_link = ItemTag {
+		id:         Uuid::new_v4(),
+		item_id:    item.id,
+		tag_id:     second_tag.id,
+		created_at: chrono::Utc::now(),
+		note:       Some("second-link".into()),
+		item:       JoinValue::default(),
+		tag:        JoinValue::default(),
+	};
+	insert_item_tag(&first_link, &pool).await.unwrap();
+	insert_item_tag(&second_link, &pool).await.unwrap();
+
+	let fetched: Item = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToItemTagByTagLinks, JoinKind::Left)
+		.join(ItemJoin::ItemToTagByTags, JoinKind::Left)
+		.r#where(Expression::Leaf(ItemQuery::IdEq(item.id)))
+		.build()
+		.fetch_one(&pool)
+		.await
+		.unwrap();
+
+	match fetched.tags {
+		JoinValue::Loaded(mut tags) => {
+			tags.sort_by(|a, b| a.name.cmp(&b.name));
+			assert_eq!(tags.len(), 2);
+			assert_eq!(tags[0].id, first_tag.id);
+			assert_eq!(tags[1].id, second_tag.id);
+		}
+		other => panic!("expected tags to load, got {:?}", other),
+	}
+
+	match fetched.tag_links {
+		JoinValue::Loaded(mut links) => {
+			links.sort_by(|a, b| a.note.cmp(&b.note));
+			assert_eq!(links.len(), 2);
+			assert_eq!(links[0].tag_id, first_tag.id);
+			assert_eq!(links[1].tag_id, second_tag.id);
+		}
+		other => panic!("expected pivot rows, got {:?}", other),
 	}
 }
 

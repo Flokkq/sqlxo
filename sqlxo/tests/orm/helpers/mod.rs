@@ -54,6 +54,19 @@ pub struct Item {
 	#[sqlxo(belongs_to)]
 	#[sqlx(skip)]
 	pub material: JoinValue<Material>,
+
+	#[sqlxo(rel(
+		many_to_many = "Tag",
+		through = "ItemTag",
+		self_fk = "item_id",
+		other_fk = "tag_id"
+	))]
+	#[sqlx(skip)]
+	pub tags: JoinValue<Vec<Tag>>,
+
+	#[sqlxo(rel(has_many = "ItemTag", fk = "item_id"))]
+	#[sqlx(skip)]
+	pub tag_links: JoinValue<Vec<ItemTag>>,
 }
 
 impl Default for Item {
@@ -68,6 +81,8 @@ impl Default for Item {
 			due_date:    chrono::Utc::now(),
 			material_id: None,
 			material:    JoinValue::default(),
+			tags:        JoinValue::default(),
+			tag_links:   JoinValue::default(),
 		}
 	}
 }
@@ -133,6 +148,10 @@ pub struct Material {
 	#[sqlxo(belongs_to)]
 	#[sqlx(skip)]
 	pub supplier: JoinValue<Supplier>,
+
+	#[sqlxo(rel(has_many = "Item", fk = "material_id"))]
+	#[sqlx(skip)]
+	pub items: JoinValue<Vec<Item>>,
 }
 
 #[allow(dead_code)]
@@ -142,6 +161,75 @@ pub struct Supplier {
 	pub id:   Uuid,
 	#[sqlxo(fts(weight = "A"))]
 	pub name: String,
+
+	#[sqlxo(rel(has_many = "Material", fk = "supplier_id"))]
+	#[sqlx(skip)]
+	pub materials: JoinValue<Vec<Material>>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+pub struct Tag {
+	#[primary_key]
+	pub id:   Uuid,
+	pub name: String,
+
+	#[sqlxo(rel(
+		many_to_many = "Item",
+		through = "ItemTag",
+		self_fk = "tag_id",
+		other_fk = "item_id"
+	))]
+	#[sqlx(skip)]
+	pub items: JoinValue<Vec<Item>>,
+
+	#[sqlxo(rel(has_many = "ItemTag", fk = "tag_id"))]
+	#[sqlx(skip)]
+	pub item_links: JoinValue<Vec<ItemTag>>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+pub struct ItemTag {
+	#[primary_key]
+	pub id:         Uuid,
+	#[foreign_key(to = "item.id")]
+	pub item_id:    Uuid,
+	#[foreign_key(to = "tag.id")]
+	pub tag_id:     Uuid,
+	pub created_at: sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
+	pub note:       Option<String>,
+
+	#[sqlxo(rel(belongs_to = "Item", fk = "item_id"))]
+	#[sqlx(skip)]
+	pub item: JoinValue<Item>,
+
+	#[sqlxo(rel(belongs_to = "Tag", fk = "tag_id"))]
+	#[sqlx(skip)]
+	pub tag: JoinValue<Tag>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+#[sqlxo(table_name = "app_user")]
+pub struct AppUser {
+	#[primary_key]
+	pub id:   Uuid,
+	pub name: String,
+
+	#[sqlxo(rel(has_one = "Profile", fk = "user_id"))]
+	#[sqlx(skip)]
+	pub profile: JoinValue<Profile>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, FromRow, Clone, Query, PartialEq)]
+pub struct Profile {
+	#[primary_key]
+	pub id:      Uuid,
+	#[foreign_key(to = "app_user.id")]
+	pub user_id: Uuid,
+	pub bio:     Option<String>,
 }
 
 // Hard delete test model

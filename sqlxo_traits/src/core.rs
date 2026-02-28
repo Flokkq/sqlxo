@@ -4,6 +4,10 @@ use sqlx::{
 	prelude::Type,
 	Postgres,
 };
+use std::{
+	collections::HashSet,
+	hash::Hash,
+};
 
 pub trait QueryModel =
 	Send + Clone + Unpin + for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow>;
@@ -54,6 +58,14 @@ pub enum JoinKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoinThroughDescriptor {
+	pub table:         &'static str,
+	pub alias_segment: &'static str,
+	pub left_field:    &'static str,
+	pub right_field:   &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JoinDescriptor {
 	pub left_table:    &'static str,
 	pub left_field:    &'static str,
@@ -61,6 +73,7 @@ pub struct JoinDescriptor {
 	pub right_field:   &'static str,
 	pub alias_segment: &'static str,
 	pub identifier:    &'static str,
+	pub through:       Option<JoinThroughDescriptor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,6 +246,36 @@ impl<T: std::fmt::Debug> std::fmt::Debug for JoinValue<T> {
 	}
 }
 
+pub fn merge_join_collections<T>(
+	target: &mut JoinValue<Vec<T>>,
+	incoming: JoinValue<Vec<T>>,
+) where
+	T: JoinIdentifiable,
+{
+	match target {
+		JoinValue::NotLoaded => {
+			*target = incoming;
+		}
+		JoinValue::Missing => {
+			if let JoinValue::Loaded(values) = incoming {
+				*target = JoinValue::Loaded(values);
+			}
+		}
+		JoinValue::Loaded(existing) => {
+			if let JoinValue::Loaded(mut values) = incoming {
+				let mut seen: HashSet<T::Key> =
+					existing.iter().map(|item| item.join_key()).collect();
+				for value in values.drain(..) {
+					let key = value.join_key();
+					if seen.insert(key) {
+						existing.push(value);
+					}
+				}
+			}
+		}
+	}
+}
+
 pub trait JoinLoadable: Sized {
 	fn project_join_columns(
 		alias: &str,
@@ -243,6 +286,12 @@ pub trait JoinLoadable: Sized {
 		row: &PgRow,
 		alias: &str,
 	) -> Result<Option<Self>, sqlx::Error>;
+}
+
+pub trait JoinIdentifiable {
+	type Key: Eq + Hash;
+
+	fn join_key(&self) -> Self::Key;
 }
 
 pub trait JoinNavigationModel {
@@ -257,6 +306,20 @@ pub trait JoinNavigationModel {
 		row: &PgRow,
 		base_alias: &str,
 	) -> Result<(), sqlx::Error>;
+
+	fn has_collection_joins(_joins: Option<&[JoinPath]>) -> bool {
+		false
+	}
+
+	fn merge_collection_rows(
+		rows: Vec<Self>,
+		_joins: Option<&[JoinPath]>,
+	) -> Vec<Self>
+	where
+		Self: Sized,
+	{
+		rows
+	}
 }
 
 pub trait WebJoinGraph {

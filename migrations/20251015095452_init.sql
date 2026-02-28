@@ -22,6 +22,31 @@ CREATE TABLE item (
     material_id UUID REFERENCES material(id)
 );
 
+CREATE TABLE tag (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE item_tag (
+    id UUID PRIMARY KEY,
+    item_id UUID NOT NULL REFERENCES item(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    note TEXT,
+    UNIQUE (item_id, tag_id)
+);
+
+CREATE TABLE app_user (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE profile (
+    id UUID PRIMARY KEY,
+    user_id UUID UNIQUE NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    bio TEXT
+);
+
 CREATE TABLE hard_delete_item (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,

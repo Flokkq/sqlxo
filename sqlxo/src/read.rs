@@ -170,6 +170,11 @@ fn build_alias_lookup(
 		for path in paths {
 			let mut alias_prefix = String::new();
 			for segment in path.segments() {
+				if let Some(through) = segment.descriptor.through {
+					let mut through_alias = alias_prefix.clone();
+					through_alias.push_str(through.alias_segment);
+					aliases.push((through.table, through_alias));
+				}
 				alias_prefix.push_str(segment.descriptor.alias_segment);
 				aliases.push((
 					segment.descriptor.right_table,
@@ -719,6 +724,13 @@ where
 			items.push(parsed.model);
 		}
 
+		if hydrate && C::Model::has_collection_joins(self.joins.as_deref()) {
+			items = <C::Model as JoinNavigationModel>::merge_collection_rows(
+				items,
+				self.joins.as_deref(),
+			);
+		}
+
 		Ok(Page::new(items, pagination, total))
 	}
 
@@ -764,6 +776,21 @@ where
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
+		if <Row as HydrateRow<C>>::requires_collection_merge(self) {
+			let rows = self
+				.to_query_builder(SelectType::Star)
+				.build()
+				.fetch_all(exec)
+				.await?;
+			let mapped = rows
+				.into_iter()
+				.map(|row| self.map_pg_row(row))
+				.collect::<Result<Vec<Row>, _>>()?;
+			let merged =
+				<Row as HydrateRow<C>>::merge_collection_rows(mapped, self);
+			return merged.into_iter().next().ok_or(sqlx::Error::RowNotFound);
+		}
+
 		let row = self
 			.to_query_builder(SelectType::Star)
 			.build()
@@ -783,7 +810,12 @@ where
 			.fetch_all(exec)
 			.await?;
 
-		rows.into_iter().map(|row| self.map_pg_row(row)).collect()
+		let mapped = rows
+			.into_iter()
+			.map(|row| self.map_pg_row(row))
+			.collect::<Result<Vec<Row>, _>>()?;
+
+		Ok(<Row as HydrateRow<C>>::merge_collection_rows(mapped, self))
 	}
 
 	async fn fetch_optional<'e, E>(
@@ -793,6 +825,21 @@ where
 	where
 		E: Executor<'e, Database = Postgres>,
 	{
+		if <Row as HydrateRow<C>>::requires_collection_merge(self) {
+			let rows = self
+				.to_query_builder(SelectType::Star)
+				.build()
+				.fetch_all(exec)
+				.await?;
+			let mapped = rows
+				.into_iter()
+				.map(|row| self.map_pg_row(row))
+				.collect::<Result<Vec<Row>, _>>()?;
+			let merged =
+				<Row as HydrateRow<C>>::merge_collection_rows(mapped, self);
+			return Ok(merged.into_iter().next());
+		}
+
 		let row = self
 			.to_query_builder(SelectType::Star)
 			.build()
@@ -819,12 +866,29 @@ fn push_join_path_inline(
 	let mut alias_prefix = String::new();
 
 	for segment in path.segments() {
-		alias_prefix.push_str(segment.descriptor.alias_segment);
-		let right_alias = alias_prefix.clone();
 		let join_word = match segment.kind {
 			JoinKind::Inner => " INNER JOIN ",
 			JoinKind::Left => " LEFT JOIN ",
 		};
+
+		if let Some(through) = segment.descriptor.through {
+			let mut through_alias = alias_prefix.clone();
+			through_alias.push_str(through.alias_segment);
+			let clause = format!(
+				r#"{join}{table} AS "{alias}" ON "{left}"."{left_field}" = "{alias}"."{right_field}""#,
+				join = join_word,
+				table = through.table,
+				alias = &through_alias,
+				left = &left_alias,
+				left_field = through.left_field,
+				right_field = through.right_field,
+			);
+			qb.push(clause);
+			left_alias = through_alias;
+		}
+
+		alias_prefix.push_str(segment.descriptor.alias_segment);
+		let right_alias = alias_prefix.clone();
 
 		let clause = format!(
 			r#"{join}{table} AS "{alias}" ON "{left}"."{left_field}" = "{alias}"."{right_field}""#,
@@ -874,6 +938,17 @@ trait HydrateRow<C: QueryContext>: Sized {
 		plan: &ReadQueryPlan<C, Self>,
 		row: PgRow,
 	) -> Result<Self, sqlx::Error>;
+
+	fn requires_collection_merge(_plan: &ReadQueryPlan<C, Self>) -> bool {
+		false
+	}
+
+	fn merge_collection_rows(
+		rows: Vec<Self>,
+		_plan: &ReadQueryPlan<C, Self>,
+	) -> Vec<Self> {
+		rows
+	}
 }
 
 impl<C, Row> HydrateRow<C> for Row
@@ -886,6 +961,19 @@ where
 		row: PgRow,
 	) -> Result<Self, sqlx::Error> {
 		Row::from_row(&row)
+	}
+
+	default fn requires_collection_merge(
+		_plan: &ReadQueryPlan<C, Self>,
+	) -> bool {
+		false
+	}
+
+	default fn merge_collection_rows(
+		rows: Vec<Self>,
+		_plan: &ReadQueryPlan<C, Self>,
+	) -> Vec<Self> {
+		rows
 	}
 }
 
@@ -903,6 +991,25 @@ where
 			model.hydrate_navigations(plan.joins.as_deref(), &row, "")?;
 		}
 		Ok(model)
+	}
+
+	fn requires_collection_merge(plan: &ReadQueryPlan<C, Self>) -> bool {
+		plan.selection.is_none() &&
+			Self::has_collection_joins(plan.joins.as_deref())
+	}
+
+	fn merge_collection_rows(
+		rows: Vec<Self>,
+		plan: &ReadQueryPlan<C, Self>,
+	) -> Vec<Self> {
+		if !Self::has_collection_joins(plan.joins.as_deref()) {
+			return rows;
+		}
+
+		<Self as JoinNavigationModel>::merge_collection_rows(
+			rows,
+			plan.joins.as_deref(),
+		)
 	}
 }
 

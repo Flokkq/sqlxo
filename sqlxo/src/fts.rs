@@ -4,11 +4,7 @@ use sqlxo_traits::{
 };
 
 fn segments_match(a: &JoinSegment, b: &JoinSegment) -> bool {
-	a.descriptor.left_table == b.descriptor.left_table &&
-		a.descriptor.left_field == b.descriptor.left_field &&
-		a.descriptor.right_table == b.descriptor.right_table &&
-		a.descriptor.right_field == b.descriptor.right_field &&
-		a.descriptor.alias_segment == b.descriptor.alias_segment
+	a.descriptor == b.descriptor
 }
 
 fn path_matches(a: &JoinPath, b: &JoinPath) -> bool {

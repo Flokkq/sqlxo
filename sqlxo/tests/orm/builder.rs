@@ -21,6 +21,8 @@ use sqlxo::{
 use uuid::Uuid;
 
 use crate::helpers::{
+	AppUser,
+	AppUserJoin,
 	CreateItem,
 	CreateItemCreation,
 	HardDeleteItem,
@@ -28,6 +30,7 @@ use crate::helpers::{
 	ItemJoin,
 	ItemQuery,
 	ItemSort,
+	Material,
 	MaterialJoin,
 	NormalizeString,
 	UpdateItem,
@@ -137,6 +140,98 @@ fn read_builder_allows_mixed_take() {
 		plan.sql(SelectType::Star).normalize(),
 		r#"SELECT "item"."name", SUM("item"."price") AS "__sqlxo_sel_1", COUNT(*) AS "__sqlxo_sel_2" FROM item GROUP BY "item"."name""#
 			.normalize()
+	);
+}
+
+#[test]
+fn has_one_join_builds_sql() {
+	let plan: ReadQueryPlan<AppUser> = QueryBuilder::<AppUser>::read()
+		.join(AppUserJoin::AppUserToProfileByProfile, JoinKind::Left)
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).trim_start().normalize(),
+		r#"
+            SELECT "app_user".*,
+                "profile__"."id" AS "__sqlxo_profile__id",
+                "profile__"."user_id" AS "__sqlxo_profile__user_id",
+                "profile__"."bio" AS "__sqlxo_profile__bio"
+            FROM app_user
+            LEFT JOIN profile AS "profile__"
+                ON "app_user"."id" = "profile__"."user_id"
+        "#
+		.normalize()
+	);
+}
+
+#[test]
+fn has_many_join_builds_sql() {
+	let plan: ReadQueryPlan<Material> = QueryBuilder::<Material>::read()
+		.join(MaterialJoin::MaterialToItemByItems, JoinKind::Left)
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).trim_start().normalize(),
+		r#"
+            SELECT "material".*,
+                "items__"."id" AS "__sqlxo_items__id",
+                "items__"."name" AS "__sqlxo_items__name",
+                "items__"."description" AS "__sqlxo_items__description",
+                "items__"."price" AS "__sqlxo_items__price",
+                "items__"."amount" AS "__sqlxo_items__amount",
+                "items__"."active" AS "__sqlxo_items__active",
+                "items__"."due_date" AS "__sqlxo_items__due_date",
+                "items__"."material_id" AS "__sqlxo_items__material_id"
+            FROM material
+            LEFT JOIN item AS "items__"
+                ON "material"."id" = "items__"."material_id"
+        "#
+		.normalize()
+	);
+}
+
+#[test]
+fn many_to_many_join_builds_sql() {
+	let plan: ReadQueryPlan<Item> = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToTagByTags, JoinKind::Left)
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).trim_start().normalize(),
+		r#"
+            SELECT "item".*,
+                "tags__"."id" AS "__sqlxo_tags__id",
+                "tags__"."name" AS "__sqlxo_tags__name"
+            FROM item
+            LEFT JOIN item_tag AS "tags__pivot__"
+                ON "item"."id" = "tags__pivot__"."item_id"
+            LEFT JOIN tag AS "tags__"
+                ON "tags__pivot__"."tag_id" = "tags__"."id"
+        "#
+		.normalize()
+	);
+}
+
+#[test]
+fn pivot_payload_join_builds_sql() {
+	let plan: ReadQueryPlan<Item> = QueryBuilder::<Item>::read()
+		.join(ItemJoin::ItemToItemTagByTagLinks, JoinKind::Left)
+		.build();
+
+	assert_eq!(
+		plan.sql(SelectType::Star).trim_start().normalize(),
+		r#"
+            SELECT "item".*,
+                "tag_links__"."id" AS "__sqlxo_tag_links__id",
+                "tag_links__"."item_id" AS "__sqlxo_tag_links__item_id",
+                "tag_links__"."tag_id" AS "__sqlxo_tag_links__tag_id",
+                "tag_links__"."created_at" AS "__sqlxo_tag_links__created_at",
+                "tag_links__"."note" AS "__sqlxo_tag_links__note"
+            FROM item
+            LEFT JOIN item_tag AS "tag_links__"
+                ON "item"."id" = "tag_links__"."item_id"
+        "#
+		.normalize()
 	);
 }
 
