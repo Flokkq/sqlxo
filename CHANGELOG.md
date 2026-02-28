@@ -1,6 +1,20 @@
 # Changelog
 
 
+## [0.7.1](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.0..v0.7.1) - 2026-02-28
+
+
+
+
+### ✨ Features
+
+- Replace Eq + Hash trait bounds on Entities with PartialEq - ([0026beb](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/0026beb80b13cce35869e66d8379120e4b539f24))
+
+### 🔧Chores
+
+- Fix ci caches - ([80c2e3b](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/80c2e3be891c730ff7d8674dcb9b88d98f6d616e))
+
+
 ## [0.7.0](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.6.3..v0.7.0) - 2026-02-28
 
 
@@ -16,6 +30,7 @@
 
 ### 🔧Chores
 
+- *(release)* Prepare for v0.7.0 - ([c8738f2](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/c8738f217e5b4c602e22a75428af780d2fc202cb))
 - *(bench)* Add criterion for benchmarking - ([05b6b55](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/05b6b55bec2b7d87773033ba7b94b1ec06d0207b))
 
 
