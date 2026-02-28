@@ -8,7 +8,11 @@ use sqlxo::{
 		BuildableJoin,
 		SelectType,
 	},
-	web::WebFilter,
+	web::{
+		WebDeleteFilter,
+		WebReadFilter,
+		WebUpdateFilter,
+	},
 	Buildable,
 	JoinKind,
 	QueryBuilder,
@@ -47,7 +51,7 @@ fn deserialize_itemdto_sqlxo_json() {
 		"page": { "pageSize": 10, "pageNo": 1 }
 	});
 
-	let f: WebFilter<ItemDto> =
+	let f: WebReadFilter<ItemDto> =
 		serde_json::from_value(json).expect("valid ItemDtoFilter");
 
 	assert_some!(f.page);
@@ -74,12 +78,11 @@ fn query_builder_from_web_query_filter() {
 		"page": { "pageSize": 10, "pageNo": 1 }
 	});
 
-	let f: WebFilter<ItemDto> =
+	let f: WebReadFilter<ItemDto> =
 		serde_json::from_value(json).expect("valid ItemDtoFilter");
 
 	let plan: ReadQueryPlan<Item> =
-		QueryBuilder::<Item>::from_web_query::<ItemDto>(&f)
-			.into_read()
+		QueryBuilder::<Item>::from_web_read::<ItemDto>(&f)
 			.join(ItemJoin::ItemToMaterialByMaterialId, JoinKind::Left)
 			.build();
 
@@ -119,13 +122,11 @@ fn web_payload_applies_joins_search_and_having() {
 		}
 	});
 
-	let f: WebFilter<ItemDto> =
+	let f: WebReadFilter<ItemDto> =
 		serde_json::from_value(json).expect("valid ItemDtoFilter");
 
 	let plan: ReadQueryPlan<Item> =
-		QueryBuilder::<Item>::from_web_query::<ItemDto>(&f)
-			.into_read()
-			.build();
+		QueryBuilder::<Item>::from_web_read::<ItemDto>(&f).build();
 	let sql = plan.sql(SelectType::Star).trim_start().normalize();
 
 	assert_eq!(
@@ -159,11 +160,10 @@ fn web_payload_supports_nested_join_paths() {
 		]
 	});
 
-	let f: WebFilter<ItemDto> =
+	let f: WebReadFilter<ItemDto> =
 		serde_json::from_value(json).expect("valid ItemDtoFilter");
 
-	let sql = QueryBuilder::<Item>::from_web_query::<ItemDto>(&f)
-		.into_read()
+	let sql = QueryBuilder::<Item>::from_web_read::<ItemDto>(&f)
 		.build()
 		.sql(SelectType::Star)
 		.trim_start()
@@ -193,7 +193,7 @@ fn web_query_into_update_builds_sql() {
 	let json: Value = json!({
 		"filter": { "id": { "eq": test_id } }
 	});
-	let filter: WebFilter<UpdateItemDto> =
+	let filter: WebUpdateFilter<UpdateItemDto> =
 		serde_json::from_value(json).expect("valid UpdateItemDto filter");
 
 	let update = UpdateItemUpdate {
@@ -201,11 +201,11 @@ fn web_query_into_update_builds_sql() {
 		..Default::default()
 	};
 
-	let plan =
-		QueryBuilder::<UpdateItem>::from_web_query::<UpdateItemDto>(&filter)
-			.into_update()
-			.model(update)
-			.build();
+	let plan = QueryBuilder::<UpdateItem>::from_web_update::<
+		UpdateItemDto,
+	>(&filter)
+	.model(update)
+	.build();
 
 	assert_eq!(
 		plan.sql().normalize(),
@@ -219,13 +219,12 @@ fn web_query_into_delete_builds_sql() {
 	let json: Value = json!({
 		"filter": { "name": { "eq": "obsolete" } }
 	});
-	let filter: WebFilter<HardDeleteItemDto> =
+	let filter: WebDeleteFilter<HardDeleteItemDto> =
 		serde_json::from_value(json).expect("valid HardDeleteItemDto filter");
 
-	let plan = QueryBuilder::<HardDeleteItem>::from_web_query::<
+	let plan = QueryBuilder::<HardDeleteItem>::from_web_delete::<
 		HardDeleteItemDto,
 	>(&filter)
-	.into_delete()
 	.build();
 
 	assert_eq!(
@@ -239,15 +238,6 @@ fn web_query_update_rejects_having() {
 	let json: Value = json!({
 		"having": { "count": { "gt": 1 } }
 	});
-	let filter: WebFilter<UpdateItemDto> =
-		serde_json::from_value(json).expect("valid UpdateItemDto filter");
-
-	let result = std::panic::catch_unwind(|| {
-		let _ = QueryBuilder::<UpdateItem>::from_web_query::<UpdateItemDto>(
-			&filter,
-		)
-		.into_update();
-	});
-
+	let result = serde_json::from_value::<WebUpdateFilter<UpdateItemDto>>(json);
 	assert!(result.is_err());
 }

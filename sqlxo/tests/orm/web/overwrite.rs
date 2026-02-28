@@ -10,7 +10,7 @@ use sqlxo::{
 		SelectType,
 	},
 	order_by,
-	web::WebFilter,
+	web::WebReadFilter,
 	Buildable,
 	QueryBuilder,
 	ReadQueryPlan,
@@ -34,12 +34,11 @@ fn dto_filter_combined_with_inline_filter() {
 		"page": null,
 	});
 
-	let f: WebFilter<ItemDto> =
+	let f: WebReadFilter<ItemDto> =
 		serde_json::from_value(json).expect("invalid ItemDtoFilter");
 
 	let plan: ReadQueryPlan<Item> =
-		QueryBuilder::<Item>::from_web_query::<ItemDto>(&f)
-			.into_read()
+		QueryBuilder::<Item>::from_web_read::<ItemDto>(&f)
 			.r#where(and![ItemQuery::NameIsNull, ItemQuery::AmountEq(1000)])
 			.order_by(order_by![ItemSort::ByNameAsc])
 			.build();

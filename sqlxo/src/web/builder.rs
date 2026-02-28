@@ -13,9 +13,11 @@ use crate::{
 		AggregateBindable,
 		GenericWebExpression,
 		WebAggregateExpression,
+		WebDeleteFilter,
 		WebExpression,
-		WebFilter,
+		WebReadFilter,
 		WebSearch,
+		WebUpdateFilter,
 	},
 	DeleteQueryBuilder,
 	QueryBuilder,
@@ -140,56 +142,58 @@ impl<'a, C> QueryBuilder<C>
 where
 	C: QueryContext,
 {
-	pub fn from_web_query<D>(dto: &WebFilter<D>) -> WebQueryAdapter<'a, C, D>
+	pub fn from_web_read<D>(dto: &WebReadFilter<D>) -> ReadQueryBuilder<'a, C>
 	where
 		D: WebQueryModel + Bind<C> + AggregateBindable<C>,
-	{
-		let parsed = ParsedWebQuery::new(dto);
-		WebQueryAdapter {
-			parsed,
-			_marker: std::marker::PhantomData,
-		}
-	}
-}
-
-pub struct WebQueryAdapter<'a, C, D>
-where
-	C: QueryContext,
-	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
-{
-	parsed:  ParsedWebQuery<C, D>,
-	_marker: std::marker::PhantomData<&'a ()>,
-}
-
-impl<'a, C, D> WebQueryAdapter<'a, C, D>
-where
-	C: QueryContext,
-	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
-{
-	pub fn into_read(self) -> ReadQueryBuilder<'a, C>
-	where
 		C::Model: crate::GetDeleteMarker + sqlxo_traits::JoinNavigationModel,
 	{
-		self.parsed.into_read_builder()
+		ParsedWebReadQuery::<C, D>::new(dto).into_read_builder()
 	}
 
-	pub fn into_update(self) -> UpdateQueryBuilder<'a, C>
+	pub fn from_web_update<D>(
+		dto: &WebUpdateFilter<D>,
+	) -> UpdateQueryBuilder<'a, C>
 	where
+		D: WebQueryModel + Bind<C>,
 		C::Model: crate::Updatable,
 	{
-		self.parsed.into_update_builder()
+		apply_mutation_filter::<C, D, UpdateQueryBuilder<'a, C>>(
+			QueryBuilder::<C>::update(),
+			dto.filter.as_ref(),
+		)
 	}
 
-	pub fn into_delete(self) -> DeleteQueryBuilder<'a, C>
+	pub fn from_web_delete<D>(
+		dto: &WebDeleteFilter<D>,
+	) -> DeleteQueryBuilder<'a, C>
 	where
+		D: WebQueryModel + Bind<C>,
 		C::Model: crate::Deletable,
 	{
-		self.parsed.into_delete_builder()
+		apply_mutation_filter::<C, D, DeleteQueryBuilder<'a, C>>(
+			QueryBuilder::<C>::delete(),
+			dto.filter.as_ref(),
+		)
 	}
+}
+
+fn apply_mutation_filter<C, D, B>(
+	mut builder: B,
+	filter: Option<&WebExpression<D>>,
+) -> B
+where
+	C: QueryContext,
+	D: WebQueryModel + Bind<C>,
+	B: BuildableFilter<C>,
+{
+	if let Some(expr) = filter.map(map_expr::<C, D>) {
+		builder = builder.r#where(expr);
+	}
+	builder
 }
 
 #[derive(Clone)]
-struct ParsedWebQuery<C, D>
+struct ParsedWebReadQuery<C, D>
 where
 	C: QueryContext,
 	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
@@ -203,12 +207,12 @@ where
 	_marker:     std::marker::PhantomData<D>,
 }
 
-impl<C, D> ParsedWebQuery<C, D>
+impl<C, D> ParsedWebReadQuery<C, D>
 where
 	C: QueryContext,
 	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
 {
-	fn new(filter: &WebFilter<D>) -> Self {
+	fn new(filter: &WebReadFilter<D>) -> Self {
 		let joins = filter.joins.as_ref().map(|nodes| {
 			let mut resolved = Vec::new();
 			for node in nodes {
@@ -262,7 +266,7 @@ where
 	where
 		C::Model: crate::GetDeleteMarker + sqlxo_traits::JoinNavigationModel,
 	{
-		let ParsedWebQuery {
+		let ParsedWebReadQuery {
 			joins,
 			filter_expr,
 			sort_expr,
@@ -306,88 +310,4 @@ where
 
 		builder
 	}
-
-	fn into_update_builder<'a>(self) -> UpdateQueryBuilder<'a, C>
-	where
-		C::Model: crate::Updatable,
-	{
-		let ParsedWebQuery {
-			filter_expr,
-			joins,
-			search,
-			having,
-			..
-		} = self;
-		Self::assert_mutation_support(
-			"update",
-			joins.is_some(),
-			search.is_some(),
-			has_having(&having),
-		);
-		let mut builder = QueryBuilder::<C>::update();
-		if let Some(expr) = filter_expr {
-			builder = builder.r#where(expr);
-		}
-		builder
-	}
-
-	fn into_delete_builder<'a>(self) -> DeleteQueryBuilder<'a, C>
-	where
-		C::Model: crate::Deletable,
-	{
-		let ParsedWebQuery {
-			filter_expr,
-			joins,
-			search,
-			having,
-			..
-		} = self;
-		Self::assert_mutation_support(
-			"delete",
-			joins.is_some(),
-			search.is_some(),
-			has_having(&having),
-		);
-		let mut builder = QueryBuilder::<C>::delete();
-		if let Some(expr) = filter_expr {
-			builder = builder.r#where(expr);
-		}
-		builder
-	}
-
-	fn assert_mutation_support(
-		op: &str,
-		has_joins: bool,
-		has_search: bool,
-		has_having: bool,
-	) {
-		if has_joins {
-			panic!(
-				"webquery joins are only supported for read operations \
-				 (attempted {})",
-				op
-			);
-		}
-		if has_search {
-			panic!(
-				"full-text search filters are only supported for read \
-				 operations (attempted {})",
-				op
-			);
-		}
-		if has_having {
-			panic!(
-				"HAVING/aggregate filters are only supported for read \
-				 operations (attempted {})",
-				op
-			);
-		}
-	}
-}
-
-fn has_having(having: &Option<Vec<crate::select::HavingPredicate>>) -> bool {
-	having
-		.as_ref()
-		.map(|preds| !preds.is_empty())
-		.unwrap_or(false)
 }

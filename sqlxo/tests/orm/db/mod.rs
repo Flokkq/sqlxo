@@ -30,7 +30,7 @@ use sqlxo::ExecutablePlan;
 use sqlxo::FetchablePlan;
 use sqlxo::QueryBuilder;
 use sqlxo::{
-	web::WebFilter,
+	web::WebReadFilter,
 	JoinKind,
 	JoinValue,
 };
@@ -492,11 +492,10 @@ async fn web_query_payload_executes_full_stack() {
 		"page": { "pageNo": 0, "pageSize": 10 }
 	});
 
-	let filter: WebFilter<ItemDto> =
+	let filter: WebReadFilter<ItemDto> =
 		serde_json::from_value(payload).expect("valid filter");
 
-	let rows = QueryBuilder::<Item>::from_web_query::<ItemDto>(&filter)
-		.into_read()
+	let rows = QueryBuilder::<Item>::from_web_read::<ItemDto>(&filter)
 		.build()
 		.fetch_all(&pool)
 		.await

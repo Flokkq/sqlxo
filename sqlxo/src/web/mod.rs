@@ -50,6 +50,18 @@ where
 	pub page:   Option<WebPagination>,
 }
 
+#[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
+#[serde(bound(deserialize = "Q: WebLeaf + Deserialize<'de>"))]
+#[serde(deny_unknown_fields)]
+#[into_params(parameter_in = Query)]
+pub struct GenericWebMutationFilter<Q>
+where
+	Q: WebLeaf + Serialize,
+{
+	#[schema(no_recursion, nullable)]
+	pub filter: Option<GenericWebExpression<Q>>,
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 #[serde(bound(deserialize = "Q: WebLeaf + Deserialize<'de>"))]
 #[serde(untagged)]
@@ -85,16 +97,22 @@ pub struct WebSearch {
 	pub include_rank: Option<bool>,
 }
 
-pub type WebExpression<T> = GenericWebExpression<<T as WebQueryModel>::Leaf>;
+pub type WebExpression<T> =
+	GenericWebExpression<<T as WebQueryModel>::Leaf>;
 pub type WebAggregateExpression<T> =
 	GenericWebExpression<<T as WebQueryModel>::AggregateLeaf>;
 pub type WebSort<T> = GenericWebSort<<T as WebQueryModel>::SortField>;
-pub type WebFilter<T> = GenericWebFilter<
+pub type WebReadFilter<T> = GenericWebFilter<
 	<T as WebQueryModel>::Leaf,
 	<T as WebQueryModel>::SortField,
 	<T as WebQueryModel>::AggregateLeaf,
 	<T as WebQueryModel>::JoinPath,
 >;
+pub type WebFilter<T> = WebReadFilter<T>;
+pub type WebUpdateFilter<T> =
+	GenericWebMutationFilter<<T as WebQueryModel>::Leaf>;
+pub type WebDeleteFilter<T> =
+	GenericWebMutationFilter<<T as WebQueryModel>::Leaf>;
 
 pub trait AggregateBindable<C>: WebQueryModel
 where

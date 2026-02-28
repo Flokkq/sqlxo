@@ -13,7 +13,11 @@ use serde::{
 };
 use sqlxo::{
 	bind,
-	web::WebFilter,
+	web::{
+		WebDeleteFilter,
+		WebReadFilter,
+		WebUpdateFilter,
+	},
 	JoinValue,
 	Query,
 	WebQuery,
@@ -117,7 +121,7 @@ pub struct ItemUpdateModel {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ItemUpdatePayload {
-	pub filter: WebFilter<ItemDto>,
+	pub filter: WebUpdateFilter<ItemDto>,
 	pub update: ItemUpdateModel,
 }
 
@@ -125,11 +129,11 @@ pub struct ItemUpdatePayload {
 #[utoipa::path(
     get,
     path = "/items/sqlxo",
-    params(WebFilter<ItemDto>),
+    params(WebReadFilter<ItemDto>),
     responses((status = 200, description = "Filtered items", body = [ItemDto])),
     tag = "items"
 )]
-fn sqlxo_items(_query: WebFilter<ItemDto>) -> Vec<ItemDto> {
+fn sqlxo_items(_query: WebReadFilter<ItemDto>) -> Vec<ItemDto> {
 	Vec::new()
 }
 
@@ -149,11 +153,11 @@ fn sqlxo_items_update(_payload: ItemUpdatePayload) -> usize {
 #[utoipa::path(
     delete,
     path = "/items/sqlxo",
-    params(WebFilter<ItemDto>),
+    params(WebDeleteFilter<ItemDto>),
     responses((status = 200, description = "Deleted rows", body = u64)),
     tag = "items"
 )]
-fn sqlxo_items_delete(_query: WebFilter<ItemDto>) -> u64 {
+fn sqlxo_items_delete(_query: WebDeleteFilter<ItemDto>) -> u64 {
 	0
 }
 
@@ -187,7 +191,9 @@ fn sqlxo_items_delete(_query: WebFilter<ItemDto>) -> u64 {
             sqlxo::web::GenericWebExpression<ItemDtoAggregateLeaf>,
             sqlxo::web::GenericWebSort<ItemDtoSortField>,
 
-            sqlxo::web::WebFilter<ItemDto>
+            sqlxo::web::WebReadFilter<ItemDto>,
+            sqlxo::web::WebUpdateFilter<ItemDto>,
+            sqlxo::web::WebDeleteFilter<ItemDto>
         )
     ),
     tags((name = "items", description = "Filtering Items with WebQuery payload"))

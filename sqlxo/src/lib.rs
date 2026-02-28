@@ -46,6 +46,15 @@ pub use select::{
 	Column,
 	SelectionList,
 };
+pub use web::{
+	WebAggregateExpression,
+	WebDeleteFilter,
+	WebExpression,
+	WebFilter,
+	WebReadFilter,
+	WebSort,
+	WebUpdateFilter,
+};
 pub use update::{
 	UpdateQueryBuilder,
 	UpdateQueryPlan,
@@ -127,26 +136,4 @@ pub trait Buildable<C: QueryContext> {
 
 	fn from_ctx() -> Self;
 	fn build(self) -> Self::Plan;
-}
-
-#[macro_export]
-macro_rules! web_query_schema {
-	($model:ty) => {
-		$crate::web::GenericWebExpression<
-			<$model as $crate::WebQueryModel>::Leaf
-		>,
-		$crate::web::GenericWebSort<
-			<$model as $crate::WebQueryModel>::SortField
-		>,
-		$crate::web::GenericWebFilter<
-			<$model as $crate::WebQueryModel>::Leaf,
-			<$model as $crate::WebQueryModel>::SortField,
-			<$model as $crate::WebQueryModel>::AggregateLeaf,
-			<$model as $crate::WebQueryModel>::JoinPath,
-		>
-	};
-	($model:ty, $($rest:ty),+ $(,)?) => {
-		$crate::web_query_schema!($model),
-		$crate::web_query_schema!($($rest),+)
-	};
 }

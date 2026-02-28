@@ -32,6 +32,7 @@
                 typos
                 git-cliff
                 cargo-edit
+                cargo-tarpaulin
 
                 # dev
                 pkg-config
