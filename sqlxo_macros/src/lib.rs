@@ -5283,11 +5283,11 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			fn default_fuzzy_threshold(normalized: &str) -> f64 {
 				let len = normalized.chars().filter(|c| !c.is_whitespace()).count();
 				match len {
-					0..=4 => 0.20,
-					5..=6 => 0.25,
-					7..=9 => 0.30,
-					10..=14 => 0.33,
-					_ => 0.35,
+					0..=4 => 0.30,
+					5..=6 => 0.35,
+					7..=9 => 0.40,
+					10..=14 => 0.45,
+					_ => 0.50,
 				}
 			}
 		}
