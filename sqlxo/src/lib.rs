@@ -1,4 +1,3 @@
-#![feature(trait_alias)]
 #![forbid(unsafe_code)]
 #![feature(specialization)]
 #![feature(inherent_associated_types)]
