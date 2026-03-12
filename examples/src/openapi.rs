@@ -1,6 +1,4 @@
 #![feature(inherent_associated_types)]
-#![feature(trait_alias)]
-#![feature(specialization)]
 #![allow(incomplete_features)]
 
 use chrono::{
