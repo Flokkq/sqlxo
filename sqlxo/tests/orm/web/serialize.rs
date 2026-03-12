@@ -130,7 +130,7 @@ fn web_payload_applies_joins_search_and_having() {
 		QueryBuilder::<Item>::from_web_read::<ItemDto>(&f).build();
 	let sql = plan.sql(SelectType::Star).trim_start().normalize();
 
-    assert_eq!(
+	assert_eq!(
         sql,
         r#"
         SELECT "item".*, "material__"."id" AS "__sqlxo_material__id",
@@ -140,11 +140,10 @@ fn web_payload_applies_joins_search_and_having() {
             "material__"."supplier_id" AS "__sqlxo_material__supplier_id"
         FROM item
         LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
-        WHERE "item"."name" LIKE $1 AND (((setweight(to_tsvector('english', "item"."name"), 'A') || setweight(to_tsvector('english', "item"."description"), 'B')) @@ ((websearch_to_tsquery('english', $2) || to_tsquery('simple', $3))) OR ((SIMILARITY(LOWER("item"."name"::text), $4) >= $5) OR (SIMILARITY(LOWER("item"."description"::text), $6) >= $7)))) AND "item"."id" IN (SELECT "item"."id"
+        WHERE "item"."name" LIKE $1 AND (((setweight(to_tsvector('english', "item"."name"), 'A') || setweight(to_tsvector('english', "item"."description"), 'B')) @@ ((websearch_to_tsquery('english', $2) || to_tsquery('simple', $3))) OR (((SIMILARITY(LOWER("item"."name"::text), $4) >= $5) OR (SIMILARITY(LOWER("item"."description"::text), $6) >= $7))))) AND "item"."id" IN (SELECT "item"."id"
             FROM item
             LEFT JOIN material AS "material__" ON "item"."material_id" = "material__"."id"
-            WHERE ("item"."name" LIKE $8) AND (((setweight(to_tsvector('english', "item"."name"), 'A') || setweight(to_tsvector('english', "item"."description"), 'B')) @@ ((websearch_to_tsquery('english', $9) || to_tsquery('simple', $10))) OR ((SIMILARITY(LOWER("item"."name"::text), $11) >= $12) OR (SIMILARITY(LOWER("item"."description"::text), $13) >= $14))))
-            GROUP BY "item"."id"
+            WHERE ("item"."name" LIKE $8) AND (((setweight(to_tsvector('english', "item"."name"), 'A') || setweight(to_tsvector('english', "item"."description"), 'B')) @@ ((websearch_to_tsquery('english', $9) || to_tsquery('simple', $10))) OR (((SIMILARITY(LOWER("item"."name"::text), $11) >= $12) OR (SIMILARITY(LOWER("item"."description"::text), $13) >= $14))))) GROUP BY "item"."id"
             HAVING COUNT(*) > $15 AND SUM("item"."price") > $16)
     "#
             .normalize()
@@ -202,11 +201,10 @@ fn web_query_into_update_builds_sql() {
 		..Default::default()
 	};
 
-	let plan = QueryBuilder::<UpdateItem>::from_web_update::<
-		UpdateItemDto,
-	>(&filter)
-	.model(update)
-	.build();
+	let plan =
+		QueryBuilder::<UpdateItem>::from_web_update::<UpdateItemDto>(&filter)
+			.model(update)
+			.build();
 
 	assert_eq!(
 		plan.sql().normalize(),
@@ -253,8 +251,7 @@ fn web_query_search_requires_full_text_support() {
 
 	let result = QueryBuilder::<HardDeleteItem>::try_from_web_read::<
 		HardDeleteItemDto,
-	>(&filter)
-	;
+	>(&filter);
 	let err = match result {
 		Ok(_) => panic!("expected search to be unsupported for HardDeleteItem"),
 		Err(err) => err,

@@ -29,11 +29,10 @@ pub enum WebQueryError {
 	/// A `search` payload was provided but the target model does not implement
 	/// [`FullTextSearchable`](sqlxo_traits::FullTextSearchable).
 	#[error(
-		"full-text search is not supported for `{model}`; ensure the model derives `FullTextSearchable` or omit the `search` payload"
+		"full-text search is not supported for `{model}`; ensure the model \
+		 derives `FullTextSearchable` or omit the `search` payload"
 	)]
-	SearchUnsupported {
-		model: &'static str,
-	},
+	SearchUnsupported { model: &'static str },
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
@@ -103,19 +102,18 @@ where
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearch {
-	pub query:        String,
+	pub query:           String,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub language:     Option<String>,
+	pub language:        Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub include_rank: Option<bool>,
+	pub include_rank:    Option<bool>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub fuzzy:        Option<bool>,
+	pub fuzzy:           Option<bool>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub fuzzy_threshold: Option<f64>,
 }
 
-pub type WebExpression<T> =
-	GenericWebExpression<<T as WebQueryModel>::Leaf>;
+pub type WebExpression<T> = GenericWebExpression<<T as WebQueryModel>::Leaf>;
 pub type WebAggregateExpression<T> =
 	GenericWebExpression<<T as WebQueryModel>::AggregateLeaf>;
 pub type WebSort<T> = GenericWebSort<<T as WebQueryModel>::SortField>;

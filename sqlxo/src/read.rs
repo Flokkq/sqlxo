@@ -124,7 +124,10 @@ where
 		M::write_tsquery(w, &self.config);
 		w.push(")");
 		if self.config.fuzzy_threshold().is_some() &&
-			self.config.fuzzy_query().is_some()
+			self.config
+				.fuzzy_tokens()
+				.map(|tokens| !tokens.is_empty())
+				.unwrap_or(false)
 		{
 			w.push(" OR ");
 			M::write_fuzzy(w, base_alias, joins, &self.config);

@@ -46,6 +46,10 @@ pub use select::{
 	Column,
 	SelectionList,
 };
+pub use update::{
+	UpdateQueryBuilder,
+	UpdateQueryPlan,
+};
 pub use web::{
 	WebAggregateExpression,
 	WebDeleteFilter,
@@ -55,10 +59,6 @@ pub use web::{
 	WebReadFilter,
 	WebSort,
 	WebUpdateFilter,
-};
-pub use update::{
-	UpdateQueryBuilder,
-	UpdateQueryPlan,
 };
 
 use sqlx::{

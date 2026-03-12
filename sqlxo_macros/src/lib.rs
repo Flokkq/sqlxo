@@ -4829,16 +4829,14 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		}
 	});
 
-	let fuzzy_conditions = fields_info.iter().map(|info| {
+	let fuzzy_field_conditions = fields_info.iter().map(|info| {
 		let variant = &info.variant;
 		let column = &info.column;
 		let is_option = info.is_option;
 		quote! {
 			if !config.is_ignored(#fts_enum_ident::#variant) {
-				if wrote_segment {
+				if wrote_token_clause {
 					w.push(" OR ");
-				} else {
-					wrote_segment = true;
 				}
 				w.push("(");
 				w.push("SIMILARITY(");
@@ -4859,10 +4857,11 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 					w.push(")");
 				}
 				w.push(", ");
-				w.bind(fuzzy_query.to_string());
+				w.bind(token.clone());
 				w.push(") >= ");
 				w.bind(threshold);
 				w.push(")");
+				wrote_token_clause = true;
 			}
 		}
 	});
@@ -5107,7 +5106,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		query:            String,
 		prefix_query:     Option<String>,
 		fuzzy_threshold:  Option<f64>,
-		fuzzy_query:      Option<String>,
+		fuzzy_tokens:     Option<Vec<String>>,
 		language:         String,
 		weight_overrides: Vec<(#fts_enum_ident, #root::SearchWeight)>,
 		ignored_fields:   Vec<#fts_enum_ident>,
@@ -5121,14 +5120,14 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			pub fn new(query: impl Into<String>) -> Self {
 				let query = query.into();
 				let prefix_query = Self::build_prefix_query(&query);
-				let fuzzy_query = Self::build_fuzzy_query(&query);
+				let fuzzy_tokens = Self::build_fuzzy_tokens(&query);
 				let fuzzy_threshold =
-					fuzzy_query.as_ref().map(|q| Self::default_fuzzy_threshold(q));
+					fuzzy_tokens.as_ref().map(|tokens| Self::default_fuzzy_threshold(tokens));
 				Self {
 					query,
 					prefix_query,
-					fuzzy_query,
 					fuzzy_threshold,
+					fuzzy_tokens,
 					language:         #const_ident.to_string(),
 					weight_overrides: Vec::new(),
 					ignored_fields:   Vec::new(),
@@ -5217,11 +5216,12 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 
 			pub fn disable_fuzzy(mut self) -> Self {
 				self.fuzzy_threshold = None;
+				self.fuzzy_tokens = None;
 				self
 			}
 
-			pub fn fuzzy_query_str(&self) -> Option<&str> {
-				self.fuzzy_query.as_deref()
+			pub fn fuzzy_tokens(&self) -> Option<&[String]> {
+				self.fuzzy_tokens.as_deref()
 			}
 
 			fn assert_valid_language(language: &str) {
@@ -5253,7 +5253,11 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			fn build_prefix_query(source: &str) -> Option<String> {
 				let mut tokens: Vec<String> = Vec::new();
 				for raw in source.split_whitespace() {
-					let cleaned = raw.trim().to_lowercase();
+					let cleaned: String = raw
+						.chars()
+						.filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+						.map(|c| c.to_ascii_lowercase())
+						.collect();
 					if cleaned.is_empty() {
 						continue;
 					}
@@ -5266,22 +5270,32 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				}
 			}
 
-			fn build_fuzzy_query(source: &str) -> Option<String> {
-				let normalized_tokens: Vec<String> = source
+			fn build_fuzzy_tokens(source: &str) -> Option<Vec<String>> {
+				let tokens: Vec<String> = source
 					.split_whitespace()
-					.map(|token| token.trim().to_lowercase())
+					.map(|token| {
+						token
+							.chars()
+							.filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+							.map(|c| c.to_ascii_lowercase())
+							.collect::<String>()
+					})
 					.filter(|token| !token.is_empty())
 					.collect();
 
-				if normalized_tokens.is_empty() {
+				if tokens.is_empty() {
 					return None;
 				}
 
-				Some(normalized_tokens.join(" "))
+				Some(tokens)
 			}
 
-			fn default_fuzzy_threshold(normalized: &str) -> f64 {
-				let len = normalized.chars().filter(|c| !c.is_whitespace()).count();
+			fn default_fuzzy_threshold(tokens: &[String]) -> f64 {
+				let len = tokens
+					.iter()
+					.map(|token| token.chars().count())
+					.max()
+					.unwrap_or(0);
 				match len {
 					0..=4 => 0.30,
 					5..=6 => 0.35,
@@ -5303,8 +5317,8 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				self.fuzzy_threshold
 			}
 
-			fn fuzzy_query(&self) -> Option<&str> {
-				self.fuzzy_query_str()
+			fn fuzzy_tokens(&self) -> Option<&[String]> {
+				self.fuzzy_tokens()
 			}
 		}
 
@@ -5408,16 +5422,32 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				W: #root::SqlWrite,
 			{
 				if let (
-					Some(fuzzy_query),
+					Some(tokens),
 					Some(threshold),
 				) = (
-					<#config_ident as #root::FullTextSearchConfig>::fuzzy_query(config),
+					<#config_ident as #root::FullTextSearchConfig>::fuzzy_tokens(config),
 					<#config_ident as #root::FullTextSearchConfig>::fuzzy_threshold(config),
 				) {
 					w.push("(");
-					let mut wrote_segment = false;
-					#(#fuzzy_conditions)*
-					if !wrote_segment {
+					let mut wrote_clause = false;
+					for token in tokens {
+						let token = token.clone();
+						if token.is_empty() {
+							continue;
+						}
+						if wrote_clause {
+							w.push(" OR ");
+						}
+						w.push("(");
+						let mut wrote_token_clause = false;
+						#(#fuzzy_field_conditions)*
+						if !wrote_token_clause {
+							w.push("FALSE");
+						}
+						w.push(")");
+						wrote_clause = true;
+					}
+					if !wrote_clause {
 						w.push("FALSE");
 					}
 					w.push(")");

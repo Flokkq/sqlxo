@@ -417,7 +417,7 @@ pub trait FullTextSearchConfig {
 		None
 	}
 
-	fn fuzzy_query(&self) -> Option<&str> {
+	fn fuzzy_tokens(&self) -> Option<&[String]> {
 		None
 	}
 }

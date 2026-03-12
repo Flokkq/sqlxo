@@ -413,7 +413,7 @@ async fn full_text_search_handles_typos_with_fuzzy_matching() {
 	let pool = get_connection_pool().await;
 
 	let mut bracket = Item::default();
-	bracket.name = "bracket".into();
+	bracket.name = "Kellner & Kunz Aktiengesellschaft".into();
 	bracket.description = "aluminium bracket".into();
 	insert_item(&bracket, &pool).await.unwrap();
 
@@ -423,7 +423,7 @@ async fn full_text_search_handles_typos_with_fuzzy_matching() {
 	insert_item(&other, &pool).await.unwrap();
 
 	let results: Vec<Item> = QueryBuilder::<Item>::read()
-		.search(ItemFullTextSearchConfig::new("brket"))
+		.search(ItemFullTextSearchConfig::new("Kunz").with_language("german"))
 		.build()
 		.fetch_all(&pool)
 		.await
