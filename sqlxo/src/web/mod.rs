@@ -33,6 +33,17 @@ pub enum WebQueryError {
 		 derives `FullTextSearchable` or omit the `search` payload"
 	)]
 	SearchUnsupported { model: &'static str },
+	/// A `search` payload attempted to include a join that was not requested
+	/// through the `joins` field.
+	#[error(
+		"search join `{path}` requires the same join to be listed under \
+		 `joins`"
+	)]
+	SearchJoinNotLoaded { path: String },
+	/// A `search` payload referenced a join path that is unknown for the
+	/// underlying `FullTextSearchable` model.
+	#[error("`{model}` does not expose searchable join `{path}`")]
+	SearchJoinInvalid { model: &'static str, path: String },
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug, IntoParams)]
@@ -57,7 +68,7 @@ where
 	#[schema(no_recursion, nullable)]
 	pub sort:   Option<Vec<GenericWebSort<S>>>,
 	#[schema(no_recursion, nullable)]
-	pub search: Option<WebSearch>,
+	pub search: Option<GenericWebSearch<J>>,
 	#[schema(nullable)]
 	pub page:   Option<WebPagination>,
 }
@@ -101,7 +112,11 @@ where
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct WebSearch {
+#[serde(bound(deserialize = "J: WebJoinPayload + Deserialize<'de>"))]
+pub struct GenericWebSearch<J>
+where
+	J: WebJoinPayload + Serialize,
+{
 	pub query:           String,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub language:        Option<String>,
@@ -111,6 +126,9 @@ pub struct WebSearch {
 	pub fuzzy:           Option<bool>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub fuzzy_threshold: Option<f64>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	#[schema(nullable)]
+	pub joins:           Option<Vec<JoinPayload<J>>>,
 }
 
 pub type WebExpression<T> = GenericWebExpression<<T as WebQueryModel>::Leaf>;
@@ -124,6 +142,7 @@ pub type WebReadFilter<T> = GenericWebFilter<
 	<T as WebQueryModel>::JoinPath,
 >;
 pub type WebFilter<T> = WebReadFilter<T>;
+pub type WebSearchPayload<T> = GenericWebSearch<<T as WebQueryModel>::JoinPath>;
 pub type WebUpdateFilter<T> =
 	GenericWebMutationFilter<<T as WebQueryModel>::Leaf>;
 pub type WebDeleteFilter<T> =

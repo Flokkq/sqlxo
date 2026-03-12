@@ -151,6 +151,61 @@ fn web_payload_applies_joins_search_and_having() {
 }
 
 #[test]
+fn web_search_join_requires_requested_join() {
+	let json: Value = json!({
+		"search": {
+			"query": "bolt",
+			"joins": [
+				{ "material": null }
+			]
+		}
+	});
+
+	let filter: WebReadFilter<ItemDto> =
+		serde_json::from_value(json).expect("valid ItemDtoFilter");
+
+	let result = QueryBuilder::<Item>::try_from_web_read::<ItemDto>(&filter);
+	let err = match result {
+		Ok(_) => panic!("expected missing join to be rejected"),
+		Err(err) => err,
+	};
+	assert!(
+		matches!(
+			err,
+			WebQueryError::SearchJoinNotLoaded { ref path } if path == "material"
+		),
+		"unexpected error: {err:?}"
+	);
+}
+
+#[test]
+fn web_search_includes_joined_tables_when_configured() {
+	let json: Value = json!({
+		"joins": [
+			{ "material": null }
+		],
+		"search": {
+			"query": "bolt",
+			"joins": [
+				{ "material": null }
+			]
+		}
+	});
+
+	let filter: WebReadFilter<ItemDto> =
+		serde_json::from_value(json).expect("valid ItemDtoFilter");
+
+	let sql = QueryBuilder::<Item>::from_web_read::<ItemDto>(&filter)
+		.build()
+		.sql(SelectType::Star);
+
+	assert!(
+		sql.contains("\"material__\".\"name\""),
+		"search clause must reference joined material alias: {sql}"
+	);
+}
+
+#[test]
 fn web_payload_supports_nested_join_paths() {
 	let json: Value = json!({
 		"joins": [

@@ -186,7 +186,9 @@ fn sqlxo_items_delete(_query: WebDeleteFilter<ItemDto>) -> u64 {
 
             sqlxo::WebSortDirection,
             sqlxo::web::WebPagination,
-            sqlxo::web::WebSearch,
+            sqlxo::web::WebSearchPayload<ItemDto>,
+            sqlxo::web::GenericWebSearch<ItemDtoJoinPath>,
+            sqlxo::web::JoinPayload<ItemDtoJoinPath>,
             sqlxo::web::GenericWebExpression<ItemDtoLeaf>,
             sqlxo::web::GenericWebExpression<ItemDtoAggregateLeaf>,
             sqlxo::web::GenericWebSort<ItemDtoSortField>,

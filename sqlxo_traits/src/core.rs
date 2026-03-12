@@ -442,6 +442,12 @@ pub trait FullTextSearchConfigBuilder: FullTextSearchConfig {
 	}
 }
 
+pub trait FullTextSearchJoinConfig {
+	type Join;
+
+	fn with_join(self, join: Self::Join) -> Self;
+}
+
 pub trait FullTextSearchable: Sized {
 	type FullTextSearchField: Copy + Eq;
 	type FullTextSearchConfig: FullTextSearchConfig + Send + Sync;
@@ -477,5 +483,11 @@ pub trait FullTextSearchable: Sized {
 	{
 		let _ = (base_alias, joins, config);
 		w.push("FALSE");
+	}
+
+	fn resolve_search_join_path(
+		_segments: &[&str],
+	) -> Option<Self::FullTextSearchJoin> {
+		None
 	}
 }

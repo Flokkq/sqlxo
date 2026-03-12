@@ -12,12 +12,13 @@ use crate::{
 	web::{
 		AggregateBindable,
 		GenericWebExpression,
+		JoinPayload,
 		WebAggregateExpression,
 		WebDeleteFilter,
 		WebExpression,
 		WebQueryError,
 		WebReadFilter,
-		WebSearch,
+		WebSearchPayload,
 		WebUpdateFilter,
 	},
 	DeleteQueryBuilder,
@@ -28,6 +29,7 @@ use crate::{
 use sqlxo_traits::{
 	Bind,
 	FullTextSearchConfigBuilder,
+	FullTextSearchJoinConfig,
 	FullTextSearchable,
 	JoinKind,
 	JoinPath,
@@ -93,10 +95,101 @@ where
 		})
 }
 
+fn flatten_join_payload<J>(payload: &[JoinPayload<J>]) -> Vec<Vec<String>>
+where
+	J: WebJoinPayload,
+{
+	let mut flattened_all = Vec::new();
+	for node in payload {
+		let mut prefix = Vec::new();
+		let mut flattened = Vec::new();
+		node.inner().flatten(&mut prefix, &mut flattened);
+		flattened_all.extend(flattened);
+	}
+	flattened_all
+}
+
+fn format_join_path(path: &[String]) -> String {
+	path.join(".")
+}
+
+fn resolve_search_join<C>(
+	segments: &[String],
+) -> Result<<C::Model as FullTextSearchable>::FullTextSearchJoin, WebQueryError>
+where
+	C: QueryContext,
+	C::Model: FullTextSearchable,
+{
+	let refs: Vec<&str> = segments.iter().map(String::as_str).collect();
+	<C::Model as FullTextSearchable>::resolve_search_join_path(&refs)
+		.ok_or_else(|| WebQueryError::SearchJoinInvalid {
+			model: std::any::type_name::<C::Model>(),
+			path:  format_join_path(segments),
+		})
+}
+
+#[derive(Clone)]
+struct ParsedWebSearch {
+	query:           String,
+	language:        Option<String>,
+	include_rank:    Option<bool>,
+	fuzzy:           Option<bool>,
+	fuzzy_threshold: Option<f64>,
+	join_paths:      Vec<Vec<String>>,
+}
+
+impl ParsedWebSearch {
+	fn new<D>(payload: &WebSearchPayload<D>) -> Self
+	where
+		D: WebQueryModel,
+	{
+		let join_paths = payload
+			.joins
+			.as_ref()
+			.map(|nodes| flatten_join_payload(nodes))
+			.unwrap_or_default();
+		Self {
+			query: payload.query.clone(),
+			language: payload.language.clone(),
+			include_rank: payload.include_rank,
+			fuzzy: payload.fuzzy,
+			fuzzy_threshold: payload.fuzzy_threshold,
+			join_paths,
+		}
+	}
+
+	fn ensure_join_paths(
+		&self,
+		available: Option<&[Vec<String>]>,
+	) -> Result<(), WebQueryError> {
+		if self.join_paths.is_empty() {
+			return Ok(());
+		}
+
+		let Some(existing) = available else {
+			let path = format_join_path(&self.join_paths[0]);
+			return Err(WebQueryError::SearchJoinNotLoaded { path });
+		};
+
+		for requested in &self.join_paths {
+			if !existing.iter().any(|path| path == requested) {
+				return Err(WebQueryError::SearchJoinNotLoaded {
+					path: format_join_path(requested),
+				});
+			}
+		}
+		Ok(())
+	}
+
+	fn join_paths(&self) -> &[Vec<String>] {
+		&self.join_paths
+	}
+}
+
 trait SearchApplier<'a, C: QueryContext> {
 	fn apply(
 		builder: ReadQueryBuilder<'a, C>,
-		search: &WebSearch,
+		search: &ParsedWebSearch,
 	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError>;
 }
 
@@ -108,7 +201,7 @@ where
 {
 	default fn apply(
 		_builder: ReadQueryBuilder<'a, C>,
-		_search: &WebSearch,
+		_search: &ParsedWebSearch,
 	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError> {
 		Err(WebQueryError::SearchUnsupported {
 			model: std::any::type_name::<C::Model>(),
@@ -121,13 +214,18 @@ where
 	C: QueryContext,
 	C::Model: FullTextSearchable + 'static,
 	<C::Model as FullTextSearchable>::FullTextSearchConfig:
-		FullTextSearchConfigBuilder + Send + Sync + 'static,
+		FullTextSearchConfigBuilder
+			+ FullTextSearchJoinConfig<
+				Join = <C::Model as FullTextSearchable>::FullTextSearchJoin,
+			> + Send
+			+ Sync
+			+ 'static,
 {
 	fn apply(
 		builder: ReadQueryBuilder<'a, C>,
-		search: &WebSearch,
+		search: &ParsedWebSearch,
 	) -> Result<ReadQueryBuilder<'a, C>, WebQueryError> {
-		let config =
+		let mut config =
 			<<C::Model as FullTextSearchable>::FullTextSearchConfig as
 				FullTextSearchConfigBuilder>::new_with_query(
 				search.query.clone(),
@@ -136,6 +234,12 @@ where
 			.apply_rank(search.include_rank)
 			.apply_fuzzy(search.fuzzy)
 			.apply_fuzzy_threshold(search.fuzzy_threshold);
+		for join in search.join_paths() {
+			let resolved = resolve_search_join::<C>(join)?;
+			config =
+				<<C::Model as FullTextSearchable>::FullTextSearchConfig as
+					FullTextSearchJoinConfig>::with_join(config, resolved);
+		}
 		Ok(builder.search(config))
 	}
 }
@@ -213,13 +317,14 @@ where
 	C: QueryContext,
 	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
 {
-	joins:       Option<Vec<JoinPath>>,
-	filter_expr: Option<Expression<C::Query>>,
-	sort_expr:   Option<SortOrder<C::Sort>>,
-	pagination:  Option<Pagination>,
-	search:      Option<WebSearch>,
-	having:      Option<Vec<crate::select::HavingPredicate>>,
-	_marker:     std::marker::PhantomData<D>,
+	joins:         Option<Vec<JoinPath>>,
+	join_segments: Option<Vec<Vec<String>>>,
+	filter_expr:   Option<Expression<C::Query>>,
+	sort_expr:     Option<SortOrder<C::Sort>>,
+	pagination:    Option<Pagination>,
+	search:        Option<ParsedWebSearch>,
+	having:        Option<Vec<crate::select::HavingPredicate>>,
+	_marker:       std::marker::PhantomData<D>,
 }
 
 impl<C, D> ParsedWebReadQuery<C, D>
@@ -228,18 +333,17 @@ where
 	D: WebQueryModel + Bind<C> + AggregateBindable<C>,
 {
 	fn new(filter: &WebReadFilter<D>) -> Self {
-		let joins = filter.joins.as_ref().map(|nodes| {
-			let mut resolved = Vec::new();
-			for node in nodes {
-				let mut prefix = Vec::new();
-				let mut flattened: Vec<Vec<String>> = Vec::new();
-				node.inner().flatten(&mut prefix, &mut flattened);
-				for segments in flattened {
-					resolved.push(resolve_web_join::<C>(&segments));
-				}
-			}
-			resolved
-		});
+		let (joins, join_segments) = if let Some(nodes) = filter.joins.as_ref()
+		{
+			let flattened = flatten_join_payload(nodes);
+			let resolved = flattened
+				.iter()
+				.map(|segments| resolve_web_join::<C>(segments))
+				.collect();
+			(Some(resolved), Some(flattened))
+		} else {
+			(None, None)
+		};
 
 		let filter_expr = filter.filter.as_ref().map(map_expr::<C, D>);
 
@@ -259,7 +363,7 @@ where
 			page:      p.page,
 			page_size: p.page_size,
 		});
-		let search = filter.search.clone();
+		let search = filter.search.as_ref().map(ParsedWebSearch::new::<D>);
 		let having = filter.having.as_ref().map(|expr| {
 			let mut preds = Vec::new();
 			collect_having_predicates::<C, D>(expr, &mut preds);
@@ -268,6 +372,7 @@ where
 
 		Self {
 			joins,
+			join_segments,
 			filter_expr,
 			sort_expr,
 			pagination,
@@ -285,6 +390,7 @@ where
 	{
 		let ParsedWebReadQuery {
 			joins,
+			join_segments,
 			filter_expr,
 			sort_expr,
 			pagination,
@@ -306,6 +412,7 @@ where
 		}
 
 		if let Some(search) = search {
+			search.ensure_join_paths(join_segments.as_deref())?;
 			builder = SearchBridge::<C>::apply(builder, &search)?;
 		}
 

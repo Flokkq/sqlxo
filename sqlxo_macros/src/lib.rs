@@ -4483,6 +4483,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 		related_ty:     syn::Type,
 		label:          syn::LitStr,
 		nested_label:   syn::LitStr,
+		friendly_name:  syn::LitStr,
 	}
 
 	let mut fields_info: Vec<FieldInfo> = Vec::new();
@@ -4677,6 +4678,11 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				),
 				proc_macro2::Span::call_site(),
 			);
+			let friendly_value = derive_join_label(&field_name_snake);
+			let friendly_name = syn::LitStr::new(
+				&friendly_value,
+				proc_macro2::Span::call_site(),
+			);
 
 			join_infos.push(JoinInfo {
 				config_variant,
@@ -4685,6 +4691,7 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 				related_ty: inner.ty.clone(),
 				label,
 				nested_label,
+				friendly_name,
 			});
 		}
 
@@ -5073,6 +5080,48 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 			(enum_tokens, impl_tokens, push_logic)
 		};
 
+	let resolve_join_method = if join_infos.is_empty() {
+		quote! {
+			fn resolve_search_join_path(
+				_segments: &[&str],
+			) -> Option<Self::FullTextSearchJoin> {
+				None
+			}
+		}
+	} else {
+		let resolve_match_arms = join_infos.iter().map(|info| {
+			let friendly = &info.friendly_name;
+			let config_variant = &info.config_variant;
+			let nested_variant = &info.nested_variant;
+			let related_ty = &info.related_ty;
+			quote! {
+				#friendly => {
+					if rest.is_empty() {
+						Some(#join_enum_ident::#config_variant)
+					} else {
+						<#related_ty as #root::FullTextSearchable>::resolve_search_join_path(rest)
+							.map(#join_enum_ident::#nested_variant)
+					}
+				}
+			}
+		});
+
+		quote! {
+			fn resolve_search_join_path(
+				segments: &[&str],
+			) -> Option<Self::FullTextSearchJoin> {
+				let (head, rest) = match segments.split_first() {
+					Some(parts) => parts,
+					None => return None,
+				};
+				match *head {
+					#(#resolve_match_arms),*,
+					_ => None,
+				}
+			}
+		}
+	};
+
 	let out = quote! {
 		const #const_ident: &str = #language_lit;
 
@@ -5115,6 +5164,15 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 	}
 
 	#join_enum_tokens
+
+	impl #root::FullTextSearchJoinConfig for #config_ident {
+		type Join = #join_enum_ident;
+
+		fn with_join(mut self, join: Self::Join) -> Self {
+			self = self.include_join(join);
+			self
+		}
+	}
 
 	impl #config_ident {
 			pub fn new(query: impl Into<String>) -> Self {
@@ -5452,11 +5510,14 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
 					}
 					w.push(")");
 				} else {
-					w.push("FALSE");
+						w.push("FALSE");
+					}
 				}
+
+				#resolve_join_method
 			}
-		}
-	};
+
+		};
 
 	out.into()
 }
