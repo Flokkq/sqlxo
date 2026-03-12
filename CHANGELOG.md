@@ -1,6 +1,17 @@
 # Changelog
 
 
+## [0.7.7](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.6..v0.7.7) - 2026-03-12
+
+
+
+
+### ✨ Features
+
+- *(webquery)* Allow joins for search - ([4e6977d](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/4e6977d03698a441a5ec986ead6026bc32668ccf))
+- *(fts)* Final search improvement - ([3026047](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/3026047be65d00d2cb8d85498af0c40bdd1db27b))
+
+
 ## [0.7.6](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.5..v0.7.6) - 2026-03-01
 
 
@@ -9,6 +20,10 @@
 ### ✨ Features
 
 - *(fts)* Increase fuzzing threshhold - ([fce7097](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/fce7097ddc6e05747229c913a450767bb491f02b))
+
+### 🔧Chores
+
+- *(release)* Prepare for v0.7.6 - ([50d2eec](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/commit/50d2eec0f6cee290fd3cb890a448f50aec405ccd))
 
 
 ## [0.7.5](https://github.com/Flokkq/https://gitlab.com/htbla-kaindorf/informatik-24/syp/syp-4bhif/lagermanagement/ci_cd_is_better_on_gh/compare/v0.7.4..v0.7.5) - 2026-02-28
